@@ -1,0 +1,671 @@
+{
+  "schema_version": 1,
+  "suite_id": "group15-line-reachability-v1",
+  "source_file": "group15/src/group15/LineReachability.java",
+  "source_sha256": "468c49e7195a3650b6d68a2fbcc4fff3b9eeb6d368af70a4bc19a75de5c54ae8",
+  "class_name": "group15.LineReachability",
+  "settings": [
+    {
+      "id": "C1",
+      "c": -7
+    },
+    {
+      "id": "C2",
+      "c": 0
+    },
+    {
+      "id": "C3",
+      "c": 100003
+    }
+  ],
+  "queries": [
+    {
+      "id": "G15-Q01",
+      "template": "T1_exact_match",
+      "setting": "C1",
+      "method": "q01",
+      "method_id": "group15.LineReachability.q01:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q01",
+        "line": 15,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": -7
+      },
+      "path_condition": "x == -7",
+      "rationale": "x = -7 satisfies the single exact-match guard and reaches the target."
+    },
+    {
+      "id": "G15-Q02",
+      "template": "T1_exact_match",
+      "setting": "C1",
+      "method": "q02",
+      "method_id": "group15.LineReachability.q02:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q02",
+        "line": 25,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x == -7) && (x > -7)",
+      "rationale": "The unchanged argument would have to equal -7 and be greater than -7 simultaneously, which is impossible."
+    },
+    {
+      "id": "G15-Q03",
+      "template": "T1_exact_match",
+      "setting": "C2",
+      "method": "q03",
+      "method_id": "group15.LineReachability.q03:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q03",
+        "line": 35,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": 0
+      },
+      "path_condition": "x == 0",
+      "rationale": "x = 0 satisfies the single exact-match guard and reaches the target."
+    },
+    {
+      "id": "G15-Q04",
+      "template": "T1_exact_match",
+      "setting": "C2",
+      "method": "q04",
+      "method_id": "group15.LineReachability.q04:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q04",
+        "line": 45,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x == 0) && (x > 0)",
+      "rationale": "The unchanged argument would have to equal 0 and be greater than 0 simultaneously, which is impossible."
+    },
+    {
+      "id": "G15-Q05",
+      "template": "T1_exact_match",
+      "setting": "C3",
+      "method": "q05",
+      "method_id": "group15.LineReachability.q05:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q05",
+        "line": 55,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": 100003
+      },
+      "path_condition": "x == 100003",
+      "rationale": "x = 100003 satisfies the single exact-match guard and reaches the target."
+    },
+    {
+      "id": "G15-Q06",
+      "template": "T1_exact_match",
+      "setting": "C3",
+      "method": "q06",
+      "method_id": "group15.LineReachability.q06:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q06",
+        "line": 65,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x == 100003) && (x > 100003)",
+      "rationale": "The unchanged argument would have to equal 100003 and be greater than 100003 simultaneously, which is impossible."
+    },
+    {
+      "id": "G15-Q07",
+      "template": "T2_integer_gap",
+      "setting": "C1",
+      "method": "q07",
+      "method_id": "group15.LineReachability.q07:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q07",
+        "line": 76,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": -7
+      },
+      "path_condition": "(x > -8) && (x < -6)",
+      "rationale": "x = -7 is the unique integer strictly between -8 and -6."
+    },
+    {
+      "id": "G15-Q08",
+      "template": "T2_integer_gap",
+      "setting": "C1",
+      "method": "q08",
+      "method_id": "group15.LineReachability.q08:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q08",
+        "line": 87,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x > -7) && (x < -6)",
+      "rationale": "No integer lies strictly between the consecutive integers -7 and -6. For Java int, x > -7 implies x >= -6, contradicting x < -6."
+    },
+    {
+      "id": "G15-Q09",
+      "template": "T2_integer_gap",
+      "setting": "C2",
+      "method": "q09",
+      "method_id": "group15.LineReachability.q09:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q09",
+        "line": 98,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": 0
+      },
+      "path_condition": "(x > -1) && (x < 1)",
+      "rationale": "x = 0 is the unique integer strictly between -1 and 1."
+    },
+    {
+      "id": "G15-Q10",
+      "template": "T2_integer_gap",
+      "setting": "C2",
+      "method": "q10",
+      "method_id": "group15.LineReachability.q10:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q10",
+        "line": 109,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x > 0) && (x < 1)",
+      "rationale": "No integer lies strictly between the consecutive integers 0 and 1. For Java int, x > 0 implies x >= 1, contradicting x < 1."
+    },
+    {
+      "id": "G15-Q11",
+      "template": "T2_integer_gap",
+      "setting": "C3",
+      "method": "q11",
+      "method_id": "group15.LineReachability.q11:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q11",
+        "line": 120,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": 100003
+      },
+      "path_condition": "(x > 100002) && (x < 100004)",
+      "rationale": "x = 100003 is the unique integer strictly between 100002 and 100004."
+    },
+    {
+      "id": "G15-Q12",
+      "template": "T2_integer_gap",
+      "setting": "C3",
+      "method": "q12",
+      "method_id": "group15.LineReachability.q12:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q12",
+        "line": 131,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x > 100003) && (x < 100004)",
+      "rationale": "No integer lies strictly between the consecutive integers 100003 and 100004. For Java int, x > 100003 implies x >= 100004, contradicting x < 100004."
+    },
+    {
+      "id": "G15-Q13",
+      "template": "T3_early_return",
+      "setting": "C1",
+      "method": "q13",
+      "method_id": "group15.LineReachability.q13:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q13",
+        "line": 146,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": -7
+      },
+      "path_condition": "!(x < -7) && !(x > -7)",
+      "rationale": "x = -7 makes both early-return guards false, so execution reaches the target."
+    },
+    {
+      "id": "G15-Q14",
+      "template": "T3_early_return",
+      "setting": "C1",
+      "method": "q14",
+      "method_id": "group15.LineReachability.q14:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q14",
+        "line": 159,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "!(x < -7) && !(x >= -7)",
+      "rationale": "Avoiding the first return requires x >= -7; avoiding the second requires x < -7. No unchanged argument satisfies both."
+    },
+    {
+      "id": "G15-Q15",
+      "template": "T3_early_return",
+      "setting": "C2",
+      "method": "q15",
+      "method_id": "group15.LineReachability.q15:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q15",
+        "line": 172,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": 0
+      },
+      "path_condition": "!(x < 0) && !(x > 0)",
+      "rationale": "x = 0 makes both early-return guards false, so execution reaches the target."
+    },
+    {
+      "id": "G15-Q16",
+      "template": "T3_early_return",
+      "setting": "C2",
+      "method": "q16",
+      "method_id": "group15.LineReachability.q16:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q16",
+        "line": 185,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "!(x < 0) && !(x >= 0)",
+      "rationale": "Avoiding the first return requires x >= 0; avoiding the second requires x < 0. No unchanged argument satisfies both."
+    },
+    {
+      "id": "G15-Q17",
+      "template": "T3_early_return",
+      "setting": "C3",
+      "method": "q17",
+      "method_id": "group15.LineReachability.q17:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q17",
+        "line": 198,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": 100003
+      },
+      "path_condition": "!(x < 100003) && !(x > 100003)",
+      "rationale": "x = 100003 makes both early-return guards false, so execution reaches the target."
+    },
+    {
+      "id": "G15-Q18",
+      "template": "T3_early_return",
+      "setting": "C3",
+      "method": "q18",
+      "method_id": "group15.LineReachability.q18:(I)I",
+      "descriptor": "(I)I",
+      "parameters": [
+        "x"
+      ],
+      "target": {
+        "marker": "G15-Q18",
+        "line": 211,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "!(x < 100003) && !(x >= 100003)",
+      "rationale": "Avoiding the first return requires x >= 100003; avoiding the second requires x < 100003. No unchanged argument satisfies both."
+    },
+    {
+      "id": "G15-Q19",
+      "template": "T4_argument_order",
+      "setting": "C1",
+      "method": "q19",
+      "method_id": "group15.LineReachability.q19:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q19",
+        "line": 221,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": -7,
+        "y": -6
+      },
+      "path_condition": "(x < y) && (y > x)",
+      "rationale": "x = -7, y = -6 satisfies x < y and y > x. The unused noise literal -7 does not affect the path."
+    },
+    {
+      "id": "G15-Q20",
+      "template": "T4_argument_order",
+      "setting": "C1",
+      "method": "q20",
+      "method_id": "group15.LineReachability.q20:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q20",
+        "line": 233,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x < y) && (y <= x)",
+      "rationale": "x < y implies y > x, contradicting y <= x for the same unchanged arguments. The unused noise literal -7 does not affect the path."
+    },
+    {
+      "id": "G15-Q21",
+      "template": "T4_argument_order",
+      "setting": "C2",
+      "method": "q21",
+      "method_id": "group15.LineReachability.q21:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q21",
+        "line": 245,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": 0,
+        "y": 1
+      },
+      "path_condition": "(x < y) && (y > x)",
+      "rationale": "x = 0, y = 1 satisfies x < y and y > x. The unused noise literal 0 does not affect the path."
+    },
+    {
+      "id": "G15-Q22",
+      "template": "T4_argument_order",
+      "setting": "C2",
+      "method": "q22",
+      "method_id": "group15.LineReachability.q22:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q22",
+        "line": 257,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x < y) && (y <= x)",
+      "rationale": "x < y implies y > x, contradicting y <= x for the same unchanged arguments. The unused noise literal 0 does not affect the path."
+    },
+    {
+      "id": "G15-Q23",
+      "template": "T4_argument_order",
+      "setting": "C3",
+      "method": "q23",
+      "method_id": "group15.LineReachability.q23:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q23",
+        "line": 269,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": 100003,
+        "y": 100004
+      },
+      "path_condition": "(x < y) && (y > x)",
+      "rationale": "x = 100003, y = 100004 satisfies x < y and y > x. The unused noise literal 100003 does not affect the path."
+    },
+    {
+      "id": "G15-Q24",
+      "template": "T4_argument_order",
+      "setting": "C3",
+      "method": "q24",
+      "method_id": "group15.LineReachability.q24:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q24",
+        "line": 281,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x < y) && (y <= x)",
+      "rationale": "x < y implies y > x, contradicting y <= x for the same unchanged arguments. The unused noise literal 100003 does not affect the path."
+    },
+    {
+      "id": "G15-Q25",
+      "template": "T5_shared_equality",
+      "setting": "C1",
+      "method": "q25",
+      "method_id": "group15.LineReachability.q25:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q25",
+        "line": 293,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": -7,
+        "y": -7
+      },
+      "path_condition": "(x == y) && (x <= y)",
+      "rationale": "x = y = -7 satisfies equality and x <= y. The unused noise literal -7 does not affect the path."
+    },
+    {
+      "id": "G15-Q26",
+      "template": "T5_shared_equality",
+      "setting": "C1",
+      "method": "q26",
+      "method_id": "group15.LineReachability.q26:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q26",
+        "line": 305,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x == y) && (x < y)",
+      "rationale": "x == y excludes x < y for the same unchanged arguments. The unused noise literal -7 does not affect the path."
+    },
+    {
+      "id": "G15-Q27",
+      "template": "T5_shared_equality",
+      "setting": "C2",
+      "method": "q27",
+      "method_id": "group15.LineReachability.q27:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q27",
+        "line": 317,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": 0,
+        "y": 0
+      },
+      "path_condition": "(x == y) && (x <= y)",
+      "rationale": "x = y = 0 satisfies equality and x <= y. The unused noise literal 0 does not affect the path."
+    },
+    {
+      "id": "G15-Q28",
+      "template": "T5_shared_equality",
+      "setting": "C2",
+      "method": "q28",
+      "method_id": "group15.LineReachability.q28:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q28",
+        "line": 329,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x == y) && (x < y)",
+      "rationale": "x == y excludes x < y for the same unchanged arguments. The unused noise literal 0 does not affect the path."
+    },
+    {
+      "id": "G15-Q29",
+      "template": "T5_shared_equality",
+      "setting": "C3",
+      "method": "q29",
+      "method_id": "group15.LineReachability.q29:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q29",
+        "line": 341,
+        "statement": "hit = 1;"
+      },
+      "expected": "reachable",
+      "witness": {
+        "x": 100003,
+        "y": 100003
+      },
+      "path_condition": "(x == y) && (x <= y)",
+      "rationale": "x = y = 100003 satisfies equality and x <= y. The unused noise literal 100003 does not affect the path."
+    },
+    {
+      "id": "G15-Q30",
+      "template": "T5_shared_equality",
+      "setting": "C3",
+      "method": "q30",
+      "method_id": "group15.LineReachability.q30:(II)I",
+      "descriptor": "(II)I",
+      "parameters": [
+        "x",
+        "y"
+      ],
+      "target": {
+        "marker": "G15-Q30",
+        "line": 353,
+        "statement": "hit = 1;"
+      },
+      "expected": "unreachable",
+      "witness": null,
+      "path_condition": "(x == y) && (x < y)",
+      "rationale": "x == y excludes x < y for the same unchanged arguments. The unused noise literal 100003 does not affect the path."
+    }
+  ]
+}
