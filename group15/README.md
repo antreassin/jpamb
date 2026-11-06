@@ -24,6 +24,74 @@ compiler-specific mappings, `build/analysis-inputs.json` with target inputs but
 no answer fields, and `build/LineReachability.javap.txt` with the disassembly.
 Failed reruns remove earlier successful reports and input mappings.
 
+### Run the structural analysis (S)
+
+The S runner is now implemented in [run_s.py](run_s.py), reusing the existing
+`parse_disassembly` bytecode loader in [validate.py](validate.py). Its small
+adapter converts raw JVM jump offsets to instruction-list indices, then calls
+the shared [structural analysis](../solutions/syntactic/src/structural.py).
+It does not write a new Java or bytecode parser.
+
+Run these commands from the repository root in PowerShell (Python 3.10+ and
+JDK 17+ must be on `PATH`):
+
+```powershell
+python group15\validate.py
+if ($LASTEXITCODE -eq 0) { python group15\run_s.py }
+```
+
+If the JDK is not on `PATH`, set it for your current terminal first, using your
+actual installation directory:
+
+```powershell
+$env:JAVA_HOME = 'C:\path\to\your\jdk-17'
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+javac -version
+```
+
+This standalone route needs neither Docker nor a JPAMB package installation.
+It uses the same S core and instruction-index convention, but **is not a
+verified integration with jvm2json or the team's concrete interpreter**.
+
+The runner reads only `build/analysis-inputs.json`, the source hash and the
+compiled class. It never reads `targets.json` or the validator's answer labels.
+It invokes `javap` on the current class and checks the method descriptors,
+source lines, statement-entry offsets and instruction indices against the
+manifest. Each target must still start with the assignment's `iconst_1` followed
+by its store on the same source line. Unsupported instructions, backward edges,
+exception handlers, stale hashes and missing/ambiguous mappings are errors,
+not `unreachable` verdicts.
+
+The output is one `query-id;verdict` line per query and a persisted report at
+`build/s-results.json`, including artifact hashes. Failed S reruns remove this
+report; rerunning the validator also invalidates it.
+
+The verified result on JDK 17.0.21 is **30 unknown, 0 unreachable**. This includes
+all 15 actually unreachable targets: their contradictions require reasoning
+about guards, which S deliberately omits. No S result is `reachable`.
+
+Tests, including a fresh compilation of the real 30-method dataset:
+
+```powershell
+python -m pytest -c solutions\syntactic\pyproject.toml solutions\syntactic\tests -q
+```
+
+The tests require `pytest`; only the real-JVM integration tests are skipped
+when the JDK tools are absent. The integration tests explicitly cover Q01
+(equality), Q02 (contradictory nested guards) and Q13 (early returns), as well as
+the complete dataset. All three examples return `unknown`.
+
+To test a genuine `unreachable` result, the unit tests use synthetic bytecode
+with a `goto` over an instruction, or an instruction after a `return`, with no
+other incoming path. Do not use an invalid target index or a source line removed
+by compilation: neither is an unreachability proof. Java rejects some dead
+statements and compilers can remove others, so synthetic instruction lists are
+the simplest direct test of this rule.
+
+An English S-only report fragment is provided in [syntactic-s.tex](syntactic-s.tex).
+It uses the team's `\Owner` and `\MemberFour` macros and is intended for inclusion
+in the report, not as a standalone LaTeX document. It makes no claims about A.
+
 To inspect the compiled code yourself after validation:
 
 ```bash
@@ -146,7 +214,9 @@ modify `Runtime.caseclasses`, and does not add the custom labels to upstream
 outcome scoring. The standard `jpamb` case list will therefore not discover
 these 30 queries automatically. A Group 15 runner should consume the custom
 query identities and observe execution at each designated instruction entry.
-That runner and the team's S–F analysis implementations are separate work.
+The standalone S runner described above implements this query interface using
+the existing `javap` loader. The remaining ladder analyses and integration with
+the team's concrete interpreter are separate work.
 
 Method identifiers follow JPAMB's syntax, for example
 `group15.LineReachability.q01:(I)I` and
@@ -169,6 +239,9 @@ Use the matching method and descriptor, and verify the JSON source-line mapping.
 Do not hard-code a `javap` byte offset as a JPAMB PC. Rebuild mappings after any
 source or compiler change; the JSON manifest pins the source hash and exact
 source lines, while build reports describe the particular compiled artifact.
+The checked-in metadata's source hash is computed after normalizing CRLF to LF,
+so a Windows Git checkout does not change its meaning. Generated manifests
+and reports still hash the exact source and class bytes used in that run.
 
 If `jvm2json` is installed in your existing JPAMB environment, a later runner
 can convert the independently compiled class without changing upstream sources:

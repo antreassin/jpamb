@@ -46,6 +46,11 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def source_digest(path):
+    # Git may check out the same source with CRLF on Windows.
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
 @dataclass(frozen=True)
 class Token:
     text: str
@@ -294,21 +299,28 @@ def run(command, **kwargs):
     return completed.stdout
 
 
-def parse_disassembly(text, methods):
+def parse_disassembly(text, target_lines):
     headers = list(re.finditer(r"^  public static int (q[0-9]{2})\([^\n]*\);$", text, re.M))
     result = {}
     for index, header in enumerate(headers):
         name = header.group(1)
         end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
         segment = text[header.end():end]
-        descriptor = re.search(r"descriptor: (\S+)", segment).group(1)
+        require(name not in result, f"Duplicate method: {name}")
+        require(name in target_lines, f"Unexpected method: {name}")
+        require("Exception table:" not in segment, f"{name}: exception handlers are unsupported")
+        signature = re.search(r"descriptor: (\S+)", segment)
+        require(signature is not None, f"{name}: missing descriptor")
+        descriptor = signature.group(1)
+        require("Code:" in segment and "LineNumberTable:" in segment,
+                f"{name}: missing bytecode or debug line information; compile with -g")
         code = segment.split("Code:", 1)[1].split("LineNumberTable:", 1)[0]
         instructions = []
         for match in re.finditer(r"^\s+(\d+):\s+(\S+)([^\n]*)$", code, re.M):
             instructions.append((int(match.group(1)), match.group(2), match.group(3).strip()))
         require(instructions, f"{name}: no bytecode")
         lines = [(int(line), int(offset)) for line, offset in re.findall(r"line (\d+): (\d+)", segment)]
-        target_line = methods[name].target_line
+        target_line = target_lines[name]
         target_offsets = [offset for line, offset in lines if line == target_line]
         require(len(target_offsets) == 1, f"{name}: target must map to exactly one line-table entry")
         offset = target_offsets[0]
@@ -326,7 +338,7 @@ def parse_disassembly(text, methods):
             "descriptor": descriptor, "instructions": instructions,
             "target_byte_offset": offset, "target_instruction_index": target_index,
         }
-    require(set(result) == set(methods), "Compiled/source method inventory mismatch")
+    require(set(result) == set(target_lines), "Compiled/query method inventory mismatch")
     return result
 
 
@@ -381,7 +393,7 @@ def validate_metadata(metadata, source, methods):
     require(metadata["suite_id"] == "group15-line-reachability-v1", "Unexpected suite ID")
     require(metadata["source_file"] == "group15/src/group15/LineReachability.java", "Unexpected source path")
     require(metadata["class_name"] == "group15.LineReachability", "Unexpected class name")
-    require(metadata["source_sha256"] == digest(source), "Source hash mismatch; review labels before updating metadata")
+    require(metadata["source_sha256"] == source_digest(source), "Source hash mismatch; review labels before updating metadata")
     require(metadata["settings"] == [{"id": "C1", "c": -7}, {"id": "C2", "c": 0}, {"id": "C3", "c": 100003}],
             "Unexpected constant settings")
     queries = metadata["queries"]
@@ -416,7 +428,7 @@ def validate_metadata(metadata, source, methods):
 
 def main():
     # A failed rerun must never leave a previous successful report/input mapping.
-    for generated in ("validation.json", "analysis-inputs.json"):
+    for generated in ("validation.json", "analysis-inputs.json", "s-results.json"):
         (BUILD / generated).unlink(missing_ok=True)
     metadata_path = HERE / "targets.json"
     metadata = json.loads(metadata_path.read_text())
@@ -432,7 +444,7 @@ def main():
     run(compiler_command)
     disassembly = run(["javap", "-classpath", str(classes), "-c", "-l", "-p", "-s", metadata["class_name"]])
     (BUILD / "LineReachability.javap.txt").write_text(disassembly)
-    bytecode = parse_disassembly(disassembly, methods)
+    bytecode = parse_disassembly(disassembly, {name: method.target_line for name, method in methods.items()})
     requests, expected_results, report_queries = [], [], []
     for q in metadata["queries"]:
         method = methods[q["method"]]

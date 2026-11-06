@@ -2,8 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-
-from structural import build_cfg, reachable_instructions, successors
+from structural import build_cfg, reachable_instructions, successors, verdict
 
 
 def test_straight_line():
@@ -119,3 +118,41 @@ def test_real_jpamb_divide_by_n():
     ]
     assert build_cfg(instructions) == [[1], [2], [3], []]
     assert reachable_instructions(instructions) == {0, 1, 2, 3}
+
+
+@pytest.mark.parametrize(
+    "instructions",
+    [
+        [{"opr": "load"}, {"opr": "return"}],
+        [{"opr": "ifz", "target": 2}, {"opr": "return"}, {"opr": "return"}],
+        [{"opr": "if", "target": 2}, {"opr": "return"}, {"opr": "return"}],
+    ],
+)
+def test_graph_path_is_unknown(instructions):
+    assert verdict(instructions, len(instructions) - 1) == "unknown"
+
+
+def test_goto_proves_skipped_instruction_unreachable():
+    instructions = [{"opr": "goto", "target": 2}, {"opr": "return"}, {"opr": "return"}]
+    assert verdict(instructions, 1) == "unreachable"
+    assert verdict(instructions, 2) == "unknown"
+
+
+def test_return_has_no_fallthrough_for_verdict():
+    assert verdict([{"opr": "return"}, {"opr": "return"}], 1) == "unreachable"
+
+
+@pytest.mark.parametrize("target", [-1, 1, True, "0", None])
+def test_verdict_rejects_invalid_target(target):
+    with pytest.raises(ValueError, match="Invalid target"):
+        verdict([{"opr": "return"}], target)
+
+
+def test_verdict_rejects_empty_method():
+    with pytest.raises(ValueError, match="Invalid target"):
+        verdict([], 0)
+
+
+def test_bad_bytecode_is_not_an_unreachable_proof():
+    with pytest.raises(NotImplementedError, match="Unsupported opcode"):
+        verdict([{"opr": "invoke"}, {"opr": "return"}], 1)

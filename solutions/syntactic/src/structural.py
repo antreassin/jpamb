@@ -1,11 +1,12 @@
 """Structural control flow over JPAMB instruction-list positions.
 
-This first step computes graph reachability, not concrete execution or source-line
-reachability. Exception-handler edges and method calls are not supported.
+The verdict concerns an instruction-list position; source-line mapping belongs
+to the caller. Exception-handler edges and method calls are not supported.
 A graph path is not a witness that an input can execute that path.
 """
 
 from collections import deque
+from typing import Literal
 
 
 def successors(index: int, instructions: list[dict]) -> list[int]:
@@ -67,3 +68,14 @@ def reachable_instructions(instructions: list[dict]) -> set[int]:
                 pending.append(target)
 
     return visited
+
+
+def verdict(instructions: list[dict], target_index: int) -> Literal["unreachable", "unknown"]:
+    """Prove unreachability only when the CFG has no path to a valid target."""
+    if type(target_index) is not int or not 0 <= target_index < len(instructions):
+        raise ValueError(f"Invalid target instruction position: {target_index!r}")
+
+    # A graph path may require contradictory guards, so it is not a witness.
+    if target_index in reachable_instructions(instructions):
+        return "unknown"
+    return "unreachable"
