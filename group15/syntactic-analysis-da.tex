@@ -1,0 +1,119 @@
+% Dansk rapportfragment: erstat de tilsvarende afsnit i rapporten med dette.
+% Filen er ikke et selvstaendigt LaTeX-dokument.
+
+\subsection{How it works}
+Vi unders{\o}ger line reachability: om der findes mindst \'et input, som
+f{\aa}r en bestemt target-linje til at blive udf{\o}rt. S og A besvarer
+sp{\o}rgsm{\aa}let p{\aa} forskellige m{\aa}der. S unders{\o}ger programmets
+kontrolflow, mens A afpr{\o}ver konkrete inputs. A er derfor en dynamisk
+testbaseret analyse, selv om den her behandles sammen med den strukturelle
+analyse under overskriften syntaktisk analyse.
+
+\paragraph{S: Structural}
+S bygger en control-flow graph (CFG), hvor hver node repr{\ae}senterer en
+bytecode-instruktion. Kanterne angiver, hvilke instruktioner der kan komme
+umiddelbart efter hinanden:
+\begin{itemize}
+    \item En almindelig instruktion forts{\ae}tter til n{\ae}ste instruktion.
+    \item Et betinget jump f{\aa}r kanter til b{\aa}de jump-target og n{\ae}ste
+          instruktion.
+    \item Et ubetinget \texttt{goto} f{\aa}r kun en kant til jump-target.
+    \item En \texttt{return} har ingen efterf{\o}lgere i metoden.
+\end{itemize}
+S vurderer ikke, om en betingelse er sand eller falsk. Begge grene medtages
+derfor, og grafen kan indeholde stier, som intet konkret input kan f{\o}lge.
+
+Breadth-first search (BFS) starter ved instruktion nummer nul og finder alle
+graf-reachable instruktioner. En k{\o} indeholder de instruktioner, der mangler
+at blive unders{\o}gt, og en visited-m{\ae}ngde forhindrer gentagen behandling.
+Hvis target ikke findes i m{\ae}ngden, returneres \texttt{unreachable}.
+Hvis target findes, returneres \texttt{unknown}: en grafsti er ikke i sig
+selv et bevis p{\aa}, at et input kan udf{\o}re den.
+
+\paragraph{A: Basic}
+A starter med en fast liste af sm{\aa} v{\ae}rdier og gr{\ae}nsev{\ae}rdier:
+\[
+0,\ 1,\ -1,\ 2,\ -2,\ m,\ m+1,\ M-1,\ M,
+\]
+hvor $m=-2^{31}$ og $M=2^{31}-1$ er henholdsvis den mindste og st{\o}rste
+Java \texttt{int}. Disse input-seeds er valgt p{\aa} forh{\aa}nd; de udledes
+ikke fra programmets konstanter eller datas{\ae}ttets facit.
+
+For metoder med \'et argument afpr{\o}ves de ni v{\ae}rdier i den viste
+r{\ae}kkef{\o}lge. For to argumenter afpr{\o}ves det kartesiske produkt:
+alle $9 \cdot 9 = 81$ kombinationer. Det inkluderer eksempelvis
+$(0,0)$, $(0,1)$ og kombinationer af gr{\ae}nsev{\ae}rdier.
+
+Hvis ingen faste inputs rammer target, afpr{\o}ves op til 1.000 yderligere
+tilf{\ae}ldige inputs pr. query. Hvert argument tr{\ae}kkes uafh{\ae}ngigt
+og uniformt fra hele Java \texttt{int}-intervallet. Tr{\ae}kningen sker med
+tilbagel{\ae}gning, s{\aa} gentagelser er mulige.
+
+Hvert input udf{\o}res med den eksisterende konkrete bytecode-interpreter
+og en frisk programtilstand. Analysen registrerer, om den mappede
+target-instruktion bliver udf{\o}rt; en bestemt returv{\ae}rdi alene er
+ikke tilstr{\ae}kkelig. Ved f{\o}rste hit stoppes s{\o}gningen for denne
+query, og A returnerer \texttt{reachable} samt inputtet som et vidne.
+Hvis hele budgettet bruges uden et hit, returneres \texttt{unknown}.
+
+Hver analyse-k{\o}rsel bruger som standard et nyt seed til
+tilf{\ae}ldighedsgeneratoren. Dette seed gemmes, s{\aa} samme k{\o}rsel kan
+gentages med samme program, inputpolitik, query-r{\ae}kkef{\o}lge og
+Python-milj{\o}. Generatorens seed skal ikke forveksles med de ni faste
+input-seeds.
+
+\subsection{Guarantees}
+\paragraph{S: Ingen grafsti er et bevis.}
+Med korrekt target-mapping og komplette kontrolflowkanter g{\ae}lder
+\[
+R_{\mathrm{concrete}} \subseteq R_S,
+\]
+hvor $R_{\mathrm{concrete}}$ er instruktionerne, der kan udf{\o}res for
+mindst \'et input, og $R_S$ er instruktionerne, som S finder i grafen.
+S er dermed en overapproksimation: den kan medtage umulige eksekveringer,
+men m{\aa} ikke udelade mulige eksekveringer. Hvis target ikke findes i
+$R_S$, kan det heller ikke findes i $R_{\mathrm{concrete}}$.
+Derfor er \texttt{unreachable} et bevis, mens S aldrig returnerer
+\texttt{reachable}.
+
+\paragraph{A: Et hit er et vidne.}
+Hvis A finder et konkret input, som udf{\o}rer target, har vi vist, at der
+findes mindst \'et s{\aa}dant input. Under foruds{\ae}tning af korrekt
+interpreter-semantik og target-mapping er \texttt{reachable} derfor
+underbygget af et vidne. Et mislykket fors{\o}g siger kun noget om det
+afpr{\o}vede input. Selv mange mislykkede fors{\o}g udelukker ikke, at et
+andet input rammer target. A returnerer derfor aldrig \texttt{unreachable}.
+
+Garantierne g{\ae}lder det underst{\o}ttede fragment af statiske, loop-free
+metoder med et eller to heltalsargumenter uden kald eller exception handlers.
+Vores runners genbruger datas{\ae}ttets \texttt{javap}-loader og kontrollerer
+blandt andet class-hash og forbindelsen mellem source line, byte offset og
+instruction index. A genbruger datas{\ae}ttets konkrete interpreter; dette
+er ikke en verificeret integration med holdets JPAMB-interpreter.
+Ugyldige mappings og ikke-underst{\o}ttet bytecode giver fejl, ikke verdicts.
+
+\subsection{What it cannot do}
+S forst{\aa}r ikke sammenh{\ae}ngen mellem betingelser. En sti, der kr{\ae}ver
+b{\aa}de $x=-7$ og $x>-7$, findes stadig i grafen, selv om ingen v{\ae}rdi
+opfylder begge krav. S kan derfor svare \texttt{unknown} p{\aa} en target,
+der faktisk er unreachable.
+
+A evaluerer derimod betingelserne under konkret eksekvering, men bruger dem
+ikke til at v{\ae}lge bedre inputs. Hvis target eksempelvis kr{\ae}ver
+$x=100003$, og denne v{\ae}rdi ikke findes blandt de faste seeds, afh{\ae}nger
+et hit af den tilf{\ae}ldige s{\o}gning. Sandsynligheden for netop denne
+v{\ae}rdi i en enkelt uniform tr{\ae}kning er kun $1/2^{32}$.
+
+P{\aa} vores 30 queries gav S 30 \texttt{unknown}. Med JDK 17.0.21,
+Python 3.12.10, generator-seed 0 og standardbudgettet gav A ni
+\texttt{reachable} og 21 \texttt{unknown}. Alle ni vidner kom fra faste
+seeds og blev efterpr{\o}vet p{\aa} JVM'en. De 21 ukendte omfatter alle
+15 faktisk unreachable targets samt seks faktisk reachable targets,
+som s{\o}gningen ikke fandt. Andre random seeds kan give andre resultater.
+
+Begr{\ae}nsningen er alts{\aa} forskellig: S ignorerer guard-v{\ae}rdier,
+mens A g{\ae}tter inputs uden at udnytte guards til inputgenerering.
+Det motiverer n{\ae}ste trin p{\aa} analysestigen, hvor information fra
+programmet kan bruges til at v{\ae}lge bedre inputs eller udelukke
+umulige stier. \texttt{Unknown} er ikke et forkert svar, men udtryk for,
+at den valgte analyse ikke har fundet tilstr{\ae}kkeligt bevis.

@@ -1,0 +1,73 @@
+% A-only report fragment. Include where \Owner and \MemberFour are defined.
+\section{Basic Analysis}
+\label{sec:basic}
+\Owner{\MemberFour}{0.75}
+
+\subsection{Idea}
+A is a bounded concrete testing analysis for line reachability. It searches
+for an input that executes the target instruction, first using common small
+and boundary values, then fresh random inputs. Unlike S, A evaluates branch
+conditions during execution, but does not use them to guide input generation.
+A target hit provides a concrete witness of reachability. A therefore returns
+only \texttt{reachable} or \texttt{unknown}, never \texttt{unreachable}.
+Although grouped with the simplest analysis rungs, A is dynamic rather than
+a purely syntactic static analysis.
+
+\subsection{How it works}
+\paragraph{A: Basic}
+A first tries the fixed seeds $0,1,-1,2,-2,m,m+1,M-1,M$, where
+$m=-2^{31}$ and $M=2^{31}-1$ are the Java \texttt{int} boundaries.
+For one argument this gives nine inputs; for two arguments it gives their
+Cartesian product of 81 pairs. These combinations include equal arguments,
+different argument orders and boundary values.
+
+If no fixed input reaches the target, A tries up to 1,000 additional random
+inputs per query. Each argument is sampled independently and uniformly from
+the full signed 32-bit integer domain, with replacement. Each execution starts
+with fresh locals, operand stack and program counter. The first target hit
+stops the search and returns \texttt{reachable}, together with the input as
+a witness. If the budget is exhausted, A returns \texttt{unknown}.
+A fresh random-generator seed is chosen for each run and recorded for replay
+with the same artifacts, query order, budget and Python environment.
+
+For the Group 15 dataset, we reuse the existing \texttt{javap} loader and
+concrete bytecode interpreter. The runner consumes the validator's answer-free
+query manifest and checks source/class hashes, method descriptors and target
+mappings. It observes entry into the designated instruction, not merely the
+method's return value. Expected labels, supplied witnesses, validator
+representatives and program constants are not used to select inputs.
+Invalid mappings and unsupported bytecode cause errors rather than verdicts.
+This is a standalone integration, not a verified integration with the team's
+JPAMB interpreter.
+
+\subsection{Guarantees}
+If A returns \texttt{reachable}, it has observed a concrete input whose
+execution enters the target instruction. With correct interpreter semantics
+and target mapping, this input is an existential witness:
+\[
+    A(P,t)=\texttt{reachable}
+    \;\Longrightarrow\;
+    \exists x \in D:\ P(x)\mbox{ executes }t,
+\]
+where $D$ is the permitted input domain, including argument pairs for
+two-argument methods. A is therefore sound for its reachability claims,
+but incomplete: a reachable target may remain undiscovered.
+Exhausting a finite testing budget does not exclude other successful inputs,
+so A never returns \texttt{unreachable}. These guarantees concern the supported
+static, loop-free integer methods without calls or exception handlers.
+
+\subsection{What it cannot do}
+A does not solve path conditions or adapt its input choices to guards.
+For example, the equality $x=100003$ is not covered by the fixed seeds.
+A single uniform random draw hits that value with probability $1/2^{32}$,
+so a small random budget can easily miss it. Similarly, failed executions
+cannot establish that contradictory conditions make a target unreachable.
+
+On all 30 queries, using JDK 17.0.21, Python 3.12.10, generator seed 0 and
+the default budget, A returned nine \texttt{reachable} and 21 \texttt{unknown}.
+All nine witnesses came from fixed seeds and were replayed successfully on
+the JVM. The unknown results include all 15 unreachable targets and six
+reachable targets requiring exact values absent from the fixed seeds.
+Random runs may differ. These observations concern this constructed dataset,
+not arbitrary Java programs, and motivate later rungs that exploit program
+information instead of choosing inputs blindly.
