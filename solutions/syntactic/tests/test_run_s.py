@@ -1,57 +1,14 @@
 import copy
 import json
-import shutil
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
-
-ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(ROOT / "group15"))
 import run_s
 import validate
-
-
-@pytest.fixture
-def example_inputs():
-    queries = []
-    methods = []
-    for number in range(1, 31):
-        name = f"q{number:02d}"
-        queries.append({
-            "id": f"G15-Q{number:02d}",
-            "method": name,
-            "method_id": f"group15.LineReachability.{name}:(I)I",
-            "descriptor": "(I)I",
-            "target": {"line": number * 10, "jvm_byte_offset": 6, "instruction_index": 4},
-        })
-        methods.append(f"""  public static int {name}(int);
-    descriptor: (I)I
-    Code:
-       0: iconst_0
-       1: istore_1
-       2: iload_0
-       3: ifne          8
-       6: iconst_1
-       7: istore_1
-       8: iload_1
-       9: ireturn
-    LineNumberTable:
-      line {number * 10 - 1}: 0
-      line {number * 10}: 6
-      line {number * 10 + 1}: 8
-""")
-    return {
-        "schema_version": 1,
-        "suite_id": "group15-line-reachability-v1",
-        "class_name": "group15.LineReachability",
-        "queries": queries,
-    }, "\n".join(methods)
+from analysis_common import normalize_instructions
 
 
 def test_normalize_jump_targets_are_indices_not_byte_offsets():
-    instructions = run_s.normalize_instructions([
+    instructions = normalize_instructions([
         (0, "iload_0", ""), (1, "ifeq", "6"),
         (4, "iconst_0", ""), (5, "ireturn", ""),
         (6, "iconst_1", ""), (7, "ireturn", ""),
@@ -61,7 +18,7 @@ def test_normalize_jump_targets_are_indices_not_byte_offsets():
 
 
 def test_normalized_goto_can_prove_unreachable():
-    instructions = run_s.normalize_instructions([
+    instructions = normalize_instructions([
         (0, "goto", "5"), (3, "iconst_1", ""), (4, "ireturn", ""),
         (5, "iconst_0", ""), (6, "ireturn", ""),
     ])
@@ -72,7 +29,7 @@ def test_normalized_goto_can_prove_unreachable():
 @pytest.mark.parametrize("opcode", ["invokevirtual", "athrow", "tableswitch", "iadd", "ifnull"])
 def test_adapter_rejects_out_of_scope_opcodes(opcode):
     with pytest.raises(ValueError, match="Unsupported Group 15 opcode"):
-        run_s.normalize_instructions([(0, opcode, "")])
+        normalize_instructions([(0, opcode, "")])
 
 
 @pytest.mark.parametrize(
@@ -87,7 +44,7 @@ def test_adapter_rejects_out_of_scope_opcodes(opcode):
 )
 def test_adapter_rejects_invalid_graphs(instructions, message):
     with pytest.raises(ValueError, match=message):
-        run_s.normalize_instructions(instructions)
+        normalize_instructions(instructions)
 
 
 def test_results_have_exactly_one_verdict_per_query(example_inputs):
@@ -167,21 +124,9 @@ def test_source_hash_normalizes_only_crlf(tmp_path):
 
 
 @pytest.fixture
-def prepared_main(tmp_path, monkeypatch, example_inputs):
-    inputs, text = example_inputs
-    build = tmp_path / "build"
-    classfile = build / "classes" / "group15" / "LineReachability.class"
-    classfile.parent.mkdir(parents=True)
-    classfile.write_bytes(b"class fixture; javap output supplied by test")
-    inputs.update({
-        "source_file": "group15/src/group15/LineReachability.java",
-        "source_sha256": validate.digest(ROOT / "group15" / "src" / "group15" / "LineReachability.java"),
-        "class_sha256": validate.digest(classfile),
-    })
-    (build / "analysis-inputs.json").write_text(json.dumps(inputs), encoding="utf-8")
-    monkeypatch.setattr(run_s, "BUILD", build)
-    monkeypatch.setattr(run_s, "run", lambda command: text)
-    return build, inputs, classfile
+def prepared_main(prepared_build, monkeypatch):
+    monkeypatch.setattr(run_s, "BUILD", prepared_build[0])
+    return prepared_build
 
 
 def test_runner_writes_only_s_verdicts_and_artifact_hashes(prepared_main, capsys):
@@ -216,24 +161,8 @@ def test_failed_run_removes_stale_success(prepared_main, change):
 
 
 @pytest.fixture(scope="module")
-def real_dataset(tmp_path_factory):
-    if not all(shutil.which(tool) for tool in ("javac", "java", "javap")):
-        pytest.skip("Real bytecode integration tests require JDK 17+ on PATH")
-    dataset = tmp_path_factory.mktemp("s-integration") / "group15"
-    for relative in (
-        "validate.py", "targets.json", "src/group15/LineReachability.java",
-        "validation/RuntimeCheck.java",
-    ):
-        destination = dataset / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / "group15" / relative, destination)
-    completed = subprocess.run(
-        [sys.executable, str(dataset / "validate.py")],
-        text=True, capture_output=True, timeout=120, check=False,
-    )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    inputs = json.loads((dataset / "build" / "analysis-inputs.json").read_text())
-    text = (dataset / "build" / "LineReachability.javap.txt").read_text()
+def real_dataset(compiled_dataset):
+    _, inputs, text = compiled_dataset
     return run_s.analyse(inputs, text)
 
 

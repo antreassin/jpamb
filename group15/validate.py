@@ -428,7 +428,7 @@ def validate_metadata(metadata, source, methods):
 
 def main():
     # A failed rerun must never leave a previous successful report/input mapping.
-    for generated in ("validation.json", "analysis-inputs.json", "s-results.json"):
+    for generated in ("validation.json", "analysis-inputs.json", "s-results.json", "a-results.json"):
         (BUILD / generated).unlink(missing_ok=True)
     metadata_path = HERE / "targets.json"
     metadata = json.loads(metadata_path.read_text())

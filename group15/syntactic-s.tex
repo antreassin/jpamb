@@ -1,59 +1,60 @@
-% S-only draft. A (Basic) is not implemented or evaluated in this fragment.
+% S and A draft; the filename is retained for existing report includes.
 % Include in the team report, where \Owner and \MemberFour are defined.
 \section{Syntactic Analysis}
 \label{sec:syntactic}
 \Owner{\MemberFour}{0.75}
 
 \subsection{Idea}
-S is a structural static analysis for line reachability. It asks whether the
-target can be reached in the method's control-flow graph (CFG), without
-evaluating branch conditions. This overapproximates executable behaviour:
-every concrete execution follows CFG edges, but a CFG path may combine
-contradictory conditions. S therefore returns only \texttt{unreachable} or
-\texttt{unknown}, never \texttt{reachable}.
+The first rungs trade precision for simplicity. S is a structural static
+analysis: it checks control-flow connectivity without evaluating guards.
+A is bounded concrete testing: it guesses inputs and observes execution.
+Although grouped in this section, A is dynamic rather than purely syntactic.
+S can prove unreachability; A can provide reachability witnesses.
 
 \subsection{How it works}
 \paragraph{S: Structural}
-Each bytecode instruction is a CFG node. Ordinary instructions have the next
-instruction as successor. Conditional jumps have both the jump target and
-the next instruction as successors; an unconditional \texttt{goto} has only
-its target, and a return has none. Breadth-first search starts at instruction
-index zero. A queue stores discovered instructions awaiting exploration, and
-a visited set prevents repeated exploration. If the target is absent from
-the visited set, S returns \texttt{unreachable}; otherwise it returns
-\texttt{unknown}. CFG construction and search take $O(|V|+|E|)$ time and
-$O(|V|+|E|)$ space when the graph is stored explicitly.
+Each bytecode instruction is a CFG node. Ordinary instructions lead to the
+next instruction; conditional jumps lead to both successors, \texttt{goto}
+only to its target, and returns have none. Breadth-first search from index
+zero computes graph-reachable instructions. An unvisited target yields
+\texttt{unreachable}; a visited one yields \texttt{unknown}. The explicit
+graph and search require $O(|V|+|E|)$ time and space.
 
-For the Group 15 dataset, we reuse the existing \texttt{javap} disassembly
-loader. A small adapter maps JVM byte offsets to zero-based instruction
-indices for the shared S implementation; it does not parse Java source.
-The runner consumes the validator's answer-free query manifest, not expected
-labels or witnesses. It checks source and class hashes, method descriptors,
-and the target assignment's source-line and bytecode mapping. Missing or
-ambiguous mappings and unsupported bytecode cause errors rather than verdicts.
-This is a standalone \texttt{javap}-based integration, not a verified
-integration with the team's concrete interpreter or \texttt{jvm2json}.
+\paragraph{A: Basic}
+A first tries the fixed seeds $0,1,-1,2,-2,m,m+1,M-1,M$, where
+$m=-2^{31}$ and $M=2^{31}-1$. Two-argument methods use their Cartesian
+product: 81 pairs. If these fail, A tries at most 1,000 additional inputs
+per query, sampling each argument uniformly from the full Java integer
+domain, with replacement. The first target hit yields \texttt{reachable}
+and its input as a witness; exhaustion yields \texttt{unknown}.
+Each run generates and records a fresh random seed; an explicit seed enables
+replay. Input selection uses neither program constants nor answer metadata.
+
+Both runners reuse the existing \texttt{javap} loader and check source/class
+hashes, descriptors and target mappings. S adapts byte offsets to instruction
+indices; A reuses the existing concrete bytecode interpreter and observes
+target entry, not simply the return value. Invalid artifacts and unsupported
+bytecode cause errors. This standalone integration is not a verified
+integration with the team's JPAMB interpreter.
 
 \subsection{Guarantees}
-Let $R_{\mathrm{concrete}}$ contain the instructions executable for some input,
-and let $R_S$ contain those reachable in the CFG. With correct target mapping
-and complete control-flow edges for the supported fragment,
-$R_{\mathrm{concrete}} \subseteq R_S$.
-Consequently, $t \notin R_S$ proves that target $t$ is unreachable.
-The converse does not hold: a graph path need not be feasible.
-S is therefore sound for its unreachability claims, but incomplete.
-The dataset runner accepts the restricted integer-bytecode fragment used by
-the static, loop-free methods and rejects calls, exception handlers and
-backward control-flow edges.
+For correct mappings and complete CFG edges,
+$R_{\mathrm{concrete}} \subseteq R_S$: absence of a CFG path proves
+unreachability, but presence does not prove feasibility. S is sound for
+unreachability claims but incomplete. With correct concrete semantics and
+mapping, A's hit is an existential witness. A missed search proves nothing
+about untested inputs. S never returns \texttt{reachable}; A never returns
+\texttt{unreachable}. These guarantees concern the supported static,
+loop-free integer fragment without calls or exception handlers.
 
 \subsection{What it cannot do}
-S does not propagate variable values or solve path conditions. For example,
-a path requiring both $x=-7$ and $x>-7$ remains present in the CFG, although
-no input satisfies it. The actual run on all 30 queries, compiled with
-JDK 17.0.21, returned 30 \texttt{unknown} and zero \texttt{unreachable}.
-This covers 15 reachable and 15 unreachable ground-truth targets; S proved
-none of the latter unreachable. Tests additionally exercise genuinely
-disconnected target instructions using synthetic bytecode.
-These results illustrate the precision limit of S on this constructed
-dataset, not a failure of soundness or evidence about arbitrary Java programs.
-More precise rungs must use information that S discards.
+S retains infeasible paths such as $x=-7 \land x>-7$. A executes guards but
+does not use them to guide input generation, so narrow equalities are easily
+missed. On the 30-query dataset, S returned 30 \texttt{unknown}. With JDK
+17.0.21, Python 3.12.10, seed 0 and the default budget, A returned nine
+\texttt{reachable} and 21 \texttt{unknown}. All nine witnesses came from fixed
+seeds and were replayed successfully on the JVM. The unknown results include
+all 15 unreachable targets and six reachable targets requiring exact values
+absent from the fixed seeds. Random runs can differ. These observations concern
+this constructed dataset, not arbitrary Java programs, and motivate later
+rungs that exploit program information rather than guessing blindly.
