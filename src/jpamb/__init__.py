@@ -309,6 +309,7 @@ class Suite:
                         "-s",
                         self.classfile(cl).relative_to(self.workdir).as_posix(),
                     ],
+                    timeout=30,
                     eff=eff,
                 )
                 file = self.decompiledfile(cl)
@@ -350,35 +351,38 @@ class Suite:
 
             entries = {}
             for case in self.cases(eff=eff):
-                eff.info(f"Running {case.experiment}")
-
-                reachable = set()
-                result = dynamic.run_experiment(case.experiment, eff=eff)
-                if result.response is None:
-                    eff.error(f"No response for {case.experiment}")
-                    continue
-                for step in result.response.steps:
-                    reachable.add(step.pc)
-
-                methods = {pc.method for pc in reachable}
-
-                coverage = {}
-                for m in methods:
-                    offsets = {pc.offset for pc in reachable if pc.method == m}
-                    coverage[m] = Coverage(
-                        reachable=offsets,
+                with eff.context(case):
+                    reachable = set()
+                    result = dynamic.run_experiment(
+                        case.experiment,
+                        workdir=self.workdir,
+                        eff=eff,
                     )
+                    if result.response is None:
+                        eff.error(f"No response for {case.experiment}")
+                        continue
+                    for step in result.response.steps:
+                        reachable.add(step.pc)
 
-                control = Control(coverage=coverage, results={case.result})
-                entries.setdefault(case.experiment.entry, []).append(control)
-                experiments[case.experiment] = control
+                    methods = sorted({pc.method for pc in reachable})
 
-                eff.info(f"Found {sexpr.pretty(sexpr.sexpr(control), indent=2)}")
+                    coverage = OrderedDict()
+                    for m in methods:
+                        offsets = {pc.offset for pc in reachable if pc.method == m}
+                        coverage[m] = Coverage(
+                            reachable=offsets,
+                        )
+
+                    control = Control(coverage=coverage, results={case.result})
+                    entries.setdefault(case.experiment.entry, []).append(control)
+                    experiments[case.experiment] = control
+
+                    eff.info(f"Found {sexpr.pretty(sexpr.sexpr(control), indent=2)}")
 
         for entry, controls in entries.items():
             experiment = Experiment(entry, None)
 
-            coverage = {}
+            coverage = OrderedDict()
             results = set()
             for control in controls:
                 results |= control.results
@@ -402,7 +406,8 @@ class Suite:
             opcode_urls = {}
             class_opcodes = {}
             for experiment in self.experiments(eff=eff):
-                class_opcodes[str(experiment.entry.classname).split(".")[-1]] = set()
+                name = str(experiment.entry.classname).split(".")[-1]
+                class_opcodes.setdefault(name, set())
                 list_ops = []
                 for opcode in self.method_opcodes(experiment.entry, eff=eff):
                     index = opcode.mnemonic()  # opcode.real().split()[0]
@@ -417,7 +422,7 @@ class Suite:
                     opcode_counts[index] += 1
 
                 for o in list_ops:
-                    class_opcodes[str(experiment.entry.classname).split(".")[-1]].add(o)
+                    class_opcodes[name].add(o)
 
             with (
                 eff.context("Writing OPCODES.md"),
@@ -440,7 +445,7 @@ class Suite:
                     file = getsourcefile(opcode.__class__)
                     assert file is not None
                     source = Path(file)
-                    rel = Path("utils") / source.relative_to(source.parent.parent)
+                    rel = Path("src") / source.relative_to(source.parent.parent)
                     giturl = f"{rel.as_posix()}?plain=1#L{getsourcelines(opcode.__class__)[1]}"
 
                     document.write(
