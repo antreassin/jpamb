@@ -355,49 +355,4 @@ public final class LineReachability {
         }
         return hit;
     }
-
-    public static int pairUnreachableSign(int x) {
-        int i = 2;
-        if (x < 0) {
-            i = 0;          // TARGET 1
-        }
-        if (x > 0) {
-            return 10 / i;  // TARGET 2
-        }
-        return 0;
-    }
-
-    public static int pairReachableRange(int x) {
-        int i = 2;
-        if (x > 5) {
-            i = 0;          // TARGET 1
-        }
-        if (x < 10) {
-            return i + 1;   // TARGET 2
-        }
-        return 0;
-    }
-
-    public static int f(float y) {
-        int i = 2;
-        while (y < 1) {
-            y = y + 1;
-        }
-        if (y != 1) {
-            i = 0;          // TARGET 1
-        }
-        return (int)(y / i); // TARGET 2
-    }
-
-    public static int pairUnreachableLoop(int x) {
-        int i = 2;
-        while (x < 0) {
-            i = 0;          // TARGET 1
-            x = x + 1;
-        }
-        if (x != 0) {
-            return 10 / i;  // TARGET 2
-        }
-        return 0;
-    }
 }
