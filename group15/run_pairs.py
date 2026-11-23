@@ -1,19 +1,3 @@
-"""Dictionary B smoke experiment for p03 and p04 only.
-
-Run from the repository root with ``python -m group15.run_pairs``.
-Constants come exclusively from each compiled method's bytecode; neither source
-comments nor targets.json supplies inputs. B's nine fixed inputs precede the
-separate dictionary and random trial budgets.
-
-The temporary oracle is return == 2, NOT bytecode-level target tracking or JPAMB
-outcome scoring. In these two unchanged, loop-free methods, each flag starts at
-zero and is assigned once, with Target 1 before Target 2. Only for that restricted
-shape does the return value establish both targets in order in one invocation.
-Replace execute_candidate's observation with instruction tracking for the final
-analyser. A fresh JVM is launched for every candidate: execution timings include
-startup and are NOT comparable to the final two-second benchmark.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -31,7 +15,17 @@ from pathlib import Path
 from group15.dictionary import MAX_INT, MIN_INT, extract_javap_constants, search
 
 HERE = Path(__file__).resolve().parent
-METHODS = ("p03", "p04")
+METHODS = {
+    "p01": "(I)I",
+    "p02": "(I)I",
+    "p03": "(I)I",
+    "p04": "(I)I",
+    "p05": "(I)I",
+    "p06": "(II)I",
+    "p07": "(I)I",
+    "p08": "(II)I",
+}
+ARITY = {"(I)I": 1, "(II)I": 2}
 CLASS_NAME = "group15.PairReachability"
 ORACLE = "return-equals-2"
 TIMING_NOTE = (
@@ -66,7 +60,7 @@ def _run(command: list[str], *, timeout: float = 60) -> str:
 
 
 def parse_pair_disassembly(text: str) -> dict[str, list[tuple[int, str, str]]]:
-    """Read only the two selected method bodies, without mixing other constants."""
+    """Verify compiled signatures and collect each method's own instructions."""
     headers = list(
         re.finditer(
             r"^  (?:public|protected|private) [^\n]*;[ \t]*$", text, re.MULTILINE
@@ -74,8 +68,8 @@ def parse_pair_disassembly(text: str) -> dict[str, list[tuple[int, str, str]]]:
     )
     methods = {}
     for index, header in enumerate(headers):
-        name_match = re.search(r"\b(p03|p04)\(", header.group())
-        if name_match is None:
+        name_match = re.search(r"\b(\w+)\(", header.group())
+        if name_match is None or name_match[1] not in METHODS:
             continue
         name = name_match[1]
         if name in methods:
@@ -83,8 +77,8 @@ def parse_pair_disassembly(text: str) -> dict[str, list[tuple[int, str, str]]]:
         end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
         body = text[header.end() : end]
         descriptor = re.search(r"^\s*descriptor: (\S+)", body, re.MULTILINE)
-        if descriptor is None or descriptor[1] != "(I)I":
-            raise ValueError(f"{name}: expected descriptor (I)I")
+        if descriptor is None or descriptor[1] != METHODS[name]:
+            raise ValueError(f"{name}: expected descriptor {METHODS[name]}")
         if "Code:" not in body or "LineNumberTable:" not in body:
             raise ValueError(f"{name}: missing bytecode or debug line information")
         code = body.split("Code:", 1)[1].split("LineNumberTable:", 1)[0]
@@ -97,8 +91,9 @@ def parse_pair_disassembly(text: str) -> dict[str, list[tuple[int, str, str]]]:
         if not re.search(r"\bline \d+: \d+", body.split("LineNumberTable:", 1)[1]):
             raise ValueError(f"{name}: empty debug line table")
         methods[name] = instructions
-    if set(methods) != set(METHODS):
-        raise ValueError("Disassembly must contain p03 and p04")
+    missing = METHODS.keys() - methods.keys()
+    if missing:
+        raise ValueError(f"Missing compiled methods: {', '.join(sorted(missing))}")
     return methods
 
 
@@ -130,16 +125,19 @@ def compile_pair_benchmark(build_dir: Path) -> PreparedBenchmark:
     return PreparedBenchmark(classes, constants, time.perf_counter() - started)
 
 
+def _arity(method: str) -> int:
+    if method not in METHODS:
+        raise ValueError(f"Unsupported paired method: {method}")
+    return ARITY[METHODS[method]]
+
+
 def execute_candidate(classes: Path, method: str, arguments: tuple[int, ...]) -> bool:
     """Smoke oracle only: run one invocation and check its return value, not PCs."""
-    if method not in METHODS:
-        raise ValueError("Only p03 and p04 are supported")
-    if (
-        len(arguments) != 1
-        or type(arguments[0]) is not int
-        or not MIN_INT <= arguments[0] <= MAX_INT
+    arity = _arity(method)
+    if len(arguments) != arity or any(
+        type(value) is not int or not MIN_INT <= value <= MAX_INT for value in arguments
     ):
-        raise ValueError("Expected exactly one signed Java int")
+        raise ValueError(f"{method} expects {arity} signed Java int argument(s)")
     output = _run(
         [
             "java",
@@ -148,7 +146,7 @@ def execute_candidate(classes: Path, method: str, arguments: tuple[int, ...]) ->
             str(classes),
             "group15.validation.PairRuntimeCheck",
             method,
-            str(arguments[0]),
+            *map(str, arguments),
         ],
         timeout=5,
     ).strip()
@@ -165,12 +163,11 @@ def run_experiment(
     dictionary_trials: int = 3,
     random_trials: int = 5,
 ) -> dict:
-    if method not in METHODS:
-        raise ValueError("Only p03 and p04 are supported")
+    arity = _arity(method)
     constants = prepared.constants[method]
     started = time.perf_counter()
     result = search(
-        1,
+        arity,
         constants,
         lambda arguments: execute_candidate(prepared.classes, method, arguments),
         random.Random(seed),
@@ -180,7 +177,7 @@ def run_experiment(
     elapsed = time.perf_counter() - started
     return {
         "method": method,
-        "method_id": f"{CLASS_NAME}.{method}:(I)I",
+        "method_id": f"{CLASS_NAME}.{method}:{METHODS[method]}",
         "constants": constants,
         "seed": seed,
         "dictionary_budget": dictionary_trials,

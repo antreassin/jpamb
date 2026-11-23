@@ -1,0 +1,78 @@
+{
+  "source_file": "group15/src/group15/PairReachability.java",
+  "source_sha256": "48ec47af58d9b8b70ceeb7086ad97920669ddef0a7ac3ac30e340ea63cfa6a97",
+  "queries": [
+    {
+      "method": "p01",
+      "descriptor": "(I)I",
+      "target_lines": [28, 31],
+      "feasible": false,
+      "pair_witness": null,
+      "target_witnesses": [[-1], [1]],
+      "rationale": "Target 1 requires x < 0 and Target 2 requires x > 0. The parameter retains its value across both tests. Negative inputs reach only Target 1, positive inputs reach only Target 2, and zero reaches neither. These three cases exhaust Java int values."
+    },
+    {
+      "method": "p02",
+      "descriptor": "(I)I",
+      "target_lines": [42, 45],
+      "feasible": true,
+      "pair_witness": [6],
+      "target_witnesses": [[10], [5]],
+      "rationale": "Both targets execute in source order whenever 5 < x < 10. The integer 6 satisfies both guards. The endpoint witnesses 10 and 5 each satisfy only their respective guard."
+    },
+    {
+      "method": "p03",
+      "descriptor": "(I)I",
+      "target_lines": [56, 59],
+      "feasible": false,
+      "pair_witness": null,
+      "target_witnesses": [[100003], [0]],
+      "rationale": "If x equals 100003, only the equality guard succeeds. Every other Java int satisfies only the inequality guard. Both guards inspect the same unmodified x, so every invocation reaches exactly one target."
+    },
+    {
+      "method": "p04",
+      "descriptor": "(I)I",
+      "target_lines": [70, 73],
+      "feasible": true,
+      "pair_witness": [100003],
+      "target_witnesses": [[100004], [100002]],
+      "rationale": "The intersection of x >= 100003 and x <= 100003 contains exactly 100003, which reaches Target 1 followed by Target 2. A larger x reaches only Target 1 and a smaller x reaches only Target 2."
+    },
+    {
+      "method": "p05",
+      "descriptor": "(I)I",
+      "target_lines": [84, 88],
+      "feasible": false,
+      "pair_witness": null,
+      "target_witnesses": [[-1], [0]],
+      "rationale": "For x < 0, execution reaches Target 1 and immediately returns before Target 2. For x >= 0, execution skips Target 1 and falls through to Target 2. These paths cover all inputs and each contains exactly one target."
+    },
+    {
+      "method": "p06",
+      "descriptor": "(II)I",
+      "target_lines": [98, 101],
+      "feasible": true,
+      "pair_witness": [0, 1],
+      "target_witnesses": [[0, 1], [0, 0]],
+      "rationale": "Whenever x < y the second guard y >= x also succeeds. The call with (0, 1) reaches both targets in order. Equal arguments such as (0, 0) reach only Target 2."
+    },
+    {
+      "method": "p07",
+      "descriptor": "(I)I",
+      "target_lines": [114, 117],
+      "feasible": false,
+      "pair_witness": null,
+      "target_witnesses": [[-1], [0]],
+      "rationale": "For x < 0, the method sets state to 1 before Target 1 and retains that value until the second guard, which requires state == 0. For x >= 0, the method skips Target 1 and retains the initial state of 0, reaching Target 2. These paths cover all inputs and neither contains both targets."
+    },
+    {
+      "method": "p08",
+      "descriptor": "(II)I",
+      "target_lines": [129, 132],
+      "feasible": true,
+      "pair_witness": [100003, 100003],
+      "target_witnesses": [[0, 0], [100003, 100003]],
+      "rationale": "Target 2 requires both arguments to equal 100003. This also satisfies the earlier x == y test, so the invocation reaches both targets in order. The equal arguments (0, 0) reach only Target 1."
+    }
+  ]
+}
