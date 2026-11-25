@@ -52,7 +52,7 @@ def example_inputs():
 @pytest.fixture
 def prepared_build(tmp_path, monkeypatch, example_inputs):
     inputs, text = example_inputs
-    build = tmp_path / "build"
+    build = tmp_path / "build" / "categories"
     classfile = build / "classes" / "group15" / "LineReachability.class"
     classfile.parent.mkdir(parents=True)
     classfile.write_bytes(b"class fixture; javap output supplied by test")
@@ -72,18 +72,18 @@ def compiled_dataset(tmp_path_factory):
         pytest.skip("Real bytecode integration tests require JDK 17+ on PATH")
     dataset = tmp_path_factory.mktemp("analysis-integration") / "group15"
     for relative in (
-        "validate.py", "targets.json", "src/group15/LineReachability.java",
+        "validate.py", "pair_dataset.py", "src/group15/LineReachability.java",
         "validation/RuntimeCheck.java",
     ):
         destination = dataset / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / "group15" / relative, destination)
     completed = subprocess.run(
-        [sys.executable, str(dataset / "validate.py")],
+        [sys.executable, str(dataset / "validate.py"), "--dataset", "line-reachability"],
         text=True, capture_output=True, timeout=120, check=False,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    build = dataset / "build"
+    build = dataset / "build" / "line-reachability"
     inputs = json.loads((build / "analysis-inputs.json").read_text())
     text = (build / "LineReachability.javap.txt").read_text()
     return build, inputs, text

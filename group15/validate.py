@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Validate Group 15 labels from restricted Java source, bytecode, and the JVM.
+"""Prepare paired Group 15 datasets (Categories by default).
 
-No external Python packages. Requires Python 3.10+ and JDK 17+ on PATH.
-The benchmark is parsed independently of targets.json's labels and explanations.
-This deliberately small verifier rejects syntax outside the supported fragment.
+Requires Python 3.10+ and JDK 17+. Historical single-target validation helpers
+remain available, but the CLI validates mappings rather than proving labels.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import itertools
 import json
@@ -342,17 +342,27 @@ def parse_disassembly(text, target_lines):
     return result
 
 
-def execute_bytecode(compiled, arguments):
-    """Independent concrete interpreter for only the opcodes javac uses here."""
+def execute_bytecode(compiled, arguments, max_steps=None):
+    """Execute integer bytecode; bounded pair runs return reached=None on cutoff."""
     instructions = compiled["instructions"]
     offset_to_index = {instruction[0]: i for i, instruction in enumerate(instructions)}
     locals_ = dict(enumerate(arguments))
     stack, pc, reached = [], 0, False
+    pair_targets = compiled.get("target_indices")
+    mask = 0
     condition = {"eq": operator.eq, "ne": operator.ne, "lt": operator.lt,
                  "le": operator.le, "gt": operator.gt, "ge": operator.ge}
-    for _ in range(len(instructions) + 1):
+    def int32(number):
+        return (number + 2**31) % 2**32 - 2**31
+
+    for _ in range(max_steps if max_steps is not None else len(instructions) + 1):
         offset, opcode, operand = instructions[pc]
-        reached |= offset == compiled["target_byte_offset"]
+        if pair_targets is not None:
+            mask |= sum(1 << i for i, group in enumerate(pair_targets) if pc in group)
+            if mask == 3:
+                return None, True
+        else:
+            reached |= offset == compiled["target_byte_offset"]
         next_pc = pc + 1
         if opcode.startswith("iconst_"):
             stack.append(-1 if opcode == "iconst_m1" else int(opcode[-1]))
@@ -368,6 +378,40 @@ def execute_bytecode(compiled, arguments):
         elif opcode.startswith("istore"):
             slot = int(opcode.split("_")[1]) if "_" in opcode else int(operand)
             locals_[slot] = stack.pop()
+        elif opcode == "iinc":
+            slot, amount = map(int, operand.split(","))
+            locals_[slot] = int32(locals_[slot] + amount)
+        elif opcode in ("ineg", "i2b", "i2s", "i2c"):
+            number = stack.pop()
+            if opcode == "ineg":
+                number = int32(-number)
+            elif opcode == "i2c":
+                number %= 2**16
+            else:
+                bits = 8 if opcode == "i2b" else 16
+                number = (number + 2**(bits - 1)) % 2**bits - 2**(bits - 1)
+            stack.append(number)
+        elif opcode == "dup":
+            stack.append(stack[-1])
+        elif opcode in ("iadd", "isub", "imul", "idiv", "irem", "iand", "ior", "ixor",
+                        "ishl", "ishr", "iushr"):
+            right, left = stack.pop(), stack.pop()
+            if opcode in ("idiv", "irem"):
+                if right == 0:
+                    return None, False
+                quotient = abs(left) // abs(right)
+                if (left < 0) != (right < 0):
+                    quotient = -quotient
+                number = quotient if opcode == "idiv" else left - quotient * right
+            elif opcode in ("ishl", "ishr", "iushr"):
+                shift = right & 31
+                number = (left << shift if opcode == "ishl" else
+                          left >> shift if opcode == "ishr" else (left % 2**32) >> shift)
+            else:
+                operation = {"iadd": operator.add, "isub": operator.sub, "imul": operator.mul,
+                             "iand": operator.and_, "ior": operator.or_, "ixor": operator.xor}[opcode]
+                number = operation(left, right)
+            stack.append(int32(number))
         elif opcode.startswith("if_icmp"):
             right, left = stack.pop(), stack.pop()
             if condition[opcode[7:]](left, right):
@@ -377,14 +421,22 @@ def execute_bytecode(compiled, arguments):
                 next_pc = offset_to_index[int(operand)]
         elif opcode == "goto":
             next_pc = offset_to_index[int(operand)]
+        elif opcode in ("tableswitch", "lookupswitch"):
+            switch = compiled["switches"][offset]
+            target = switch.get(str(stack.pop()), switch["default"])
+            next_pc = offset_to_index[target]
         elif opcode == "ireturn":
             returned = stack.pop()
             require(not stack, "Nonempty stack on ireturn")
             return returned, reached
         else:
             raise ValueError(f"Unsupported bytecode opcode: {opcode}")
-        require(next_pc > pc and next_pc < len(instructions), "Unexpected backward/invalid control flow")
+        require(0 <= next_pc < len(instructions), "Invalid control flow")
+        if max_steps is None:
+            require(next_pc > pc, "Unexpected backward/invalid control flow")
         pc = next_pc
+    if max_steps is not None:
+        return None, None
     raise ValueError("Bytecode execution failed to return")
 
 
@@ -426,7 +478,7 @@ def validate_metadata(metadata, source, methods):
             require(witness is None, "Unreachable target must not have a witness")
 
 
-def main():
+def validate_single_target():
     # A failed rerun must never leave a previous successful report/input mapping.
     for generated in ("validation.json", "analysis-inputs.json", "s-results.json", "a-results.json"):
         (BUILD / generated).unlink(missing_ok=True)
@@ -545,6 +597,16 @@ def main():
     print(f"PASS: 30 queries (15 reachable, 15 unreachable); {len(requests)} inputs checked by source, bytecode, and JVM.")
     print("All 30 target assignments retained and mapped in bytecode; every reachable has a rejecting input.")
     print(f"Report: {BUILD / 'validation.json'}")
+
+
+def main(argv=None):
+    from pair_dataset import add_dataset_argument, prepare
+
+    parser = argparse.ArgumentParser(
+        description="Compile a two-target dataset and validate its source/bytecode mappings.")
+    add_dataset_argument(parser)
+    args = parser.parse_args(argv)
+    prepare(BUILD / args.dataset, args.dataset)
 
 
 if __name__ == "__main__":

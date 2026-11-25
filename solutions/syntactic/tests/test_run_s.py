@@ -5,6 +5,7 @@ import pytest
 import run_s
 import validate
 from analysis_common import normalize_instructions
+from structural import verdict
 
 
 def test_normalize_jump_targets_are_indices_not_byte_offsets():
@@ -14,7 +15,7 @@ def test_normalize_jump_targets_are_indices_not_byte_offsets():
         (6, "iconst_1", ""), (7, "ireturn", ""),
     ])
     assert instructions[1] == {"offset": 1, "opr": "ifz", "target": 4}
-    assert run_s.verdict(instructions, 4) == "unknown"
+    assert verdict(instructions, 4) == "unknown"
 
 
 def test_normalized_goto_can_prove_unreachable():
@@ -22,8 +23,8 @@ def test_normalized_goto_can_prove_unreachable():
         (0, "goto", "5"), (3, "iconst_1", ""), (4, "ireturn", ""),
         (5, "iconst_0", ""), (6, "ireturn", ""),
     ])
-    assert run_s.verdict(instructions, 1) == "unreachable"
-    assert run_s.verdict(instructions, 3) == "unknown"
+    assert verdict(instructions, 1) == "unreachable"
+    assert verdict(instructions, 3) == "unknown"
 
 
 @pytest.mark.parametrize("opcode", ["invokevirtual", "athrow", "tableswitch", "iadd", "ifnull"])
@@ -125,13 +126,13 @@ def test_source_hash_normalizes_only_crlf(tmp_path):
 
 @pytest.fixture
 def prepared_main(prepared_build, monkeypatch):
-    monkeypatch.setattr(run_s, "BUILD", prepared_build[0])
+    monkeypatch.setattr(run_s, "BUILD", prepared_build[0].parent)
     return prepared_build
 
 
 def test_runner_writes_only_s_verdicts_and_artifact_hashes(prepared_main, capsys):
     build, inputs, _ = prepared_main
-    run_s.main()
+    run_s.main([])
     report = json.loads((build / "s-results.json").read_text())
     assert report["status"] == "passed"
     assert report["summary"] == {"unreachable": 0, "unknown": 30}
@@ -156,7 +157,7 @@ def test_failed_run_removes_stale_success(prepared_main, change):
     if change == "missing-inputs":
         (build / "analysis-inputs.json").unlink()
     with pytest.raises(ValueError):
-        run_s.main()
+        run_s.main([])
     assert not output.exists()
 
 
@@ -166,7 +167,7 @@ def real_dataset(compiled_dataset):
     return run_s.analyse(inputs, text)
 
 
-@pytest.mark.parametrize("query_id", ["G15-Q01", "G15-Q02", "G15-Q13"])
+@pytest.mark.parametrize("query_id", ["q01", "q02", "q13"])
 def test_three_real_example_methods_are_unknown(real_dataset, query_id):
     result = next(result for result in real_dataset if result["id"] == query_id)
     assert result["verdict"] == "unknown"
@@ -174,5 +175,5 @@ def test_three_real_example_methods_are_unknown(real_dataset, query_id):
 
 def test_all_30_real_targets_are_unknown(real_dataset):
     assert len(real_dataset) == 30
-    assert {result["id"] for result in real_dataset} == {f"G15-Q{i:02d}" for i in range(1, 31)}
+    assert {result["id"] for result in real_dataset} == {f"q{i:02d}" for i in range(1, 31)}
     assert {result["verdict"] for result in real_dataset} == {"unknown"}

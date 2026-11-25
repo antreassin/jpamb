@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 import pytest
+import basic_search
 import run_a
 import validate
 from basic_search import FIXED_SEEDS
@@ -46,8 +47,8 @@ def test_random_hit_is_reported_with_its_witness_and_phase(example_inputs, monke
     inputs, text = example_inputs
     rng = random.Random(0)
     monkeypatch.setattr(rng, "randint", lambda low, high: 17)
-    monkeypatch.setattr(run_a.random, "Random", lambda seed: rng)
-    monkeypatch.setattr(run_a, "execute_bytecode", lambda method, args: (0, args == (17,)))
+    monkeypatch.setattr(basic_search.random, "Random", lambda seed: rng)
+    monkeypatch.setattr(validate, "execute_bytecode", lambda method, args: (0, args == (17,)))
     results = run_a.analyse(inputs, text, seed=0)
     assert all(result["verdict"] == "reachable" and result["witness"] == [17] for result in results)
     assert all(result["witness_phase"] == "random" for result in results)
@@ -71,7 +72,7 @@ def test_a_rejects_unsupported_bytecode_before_search(example_inputs):
 
 @pytest.fixture
 def prepared_main(prepared_build, monkeypatch):
-    monkeypatch.setattr(run_a, "BUILD", prepared_build[0])
+    monkeypatch.setattr(run_a, "BUILD", prepared_build[0].parent)
     return prepared_build
 
 
@@ -127,18 +128,23 @@ def test_negative_budget_is_a_cli_error(capsys):
 
 
 def test_revalidation_invalidates_both_analysis_reports(tmp_path, monkeypatch):
+    import pair_dataset
+
     filenames = ("validation.json", "analysis-inputs.json", "s-results.json", "a-results.json")
+    build = tmp_path / "categories"
+    build.mkdir()
     for name in filenames:
-        (tmp_path / name).write_text("{}")
+        (build / name).write_text("{}")
     monkeypatch.setattr(validate, "BUILD", tmp_path)
 
-    def reject_metadata(*args):
-        raise ValueError("Invalid metadata")
+    def reject_compile(*args):
+        raise ValueError("Compilation failed")
 
-    monkeypatch.setattr(validate, "validate_metadata", reject_metadata)
-    with pytest.raises(ValueError, match="Invalid metadata"):
-        validate.main()
-    assert all(not (tmp_path / name).exists() for name in filenames)
+    monkeypatch.setattr(pair_dataset.shutil, "which", lambda tool: tool)
+    monkeypatch.setattr(pair_dataset, "run", reject_compile)
+    with pytest.raises(ValueError, match="Compilation failed"):
+        validate.main([])
+    assert all(not (build / name).exists() for name in filenames)
 
 
 def test_all_real_queries_and_replay_witnesses_on_jvm(compiled_dataset):
@@ -147,29 +153,28 @@ def test_all_real_queries_and_replay_witnesses_on_jvm(compiled_dataset):
     assert results == run_a.analyse(inputs, text, seed=0)
     hits = [result for result in results if result["verdict"] == "reachable"]
     misses = [result for result in results if result["verdict"] == "unknown"]
-    assert len(hits) == 9
-    assert len(misses) == 21
+    assert len(hits) == 7
+    assert len(misses) == 23
     assert len(results) == 30
     assert all(result["witness"] is None and result["random_trials"] == 1000 for result in misses)
 
-    # Answer labels are used only here, after analysis, for evaluation.
-    labels = json.loads((build.parent / "targets.json").read_text())["queries"]
-    expected = {query["id"]: query["expected"] for query in labels}
-    assert all(expected[result["id"]] == "reachable" for result in hits)
-    assert sum(expected[result["id"]] == "reachable" for result in misses) == 6
-
-    methods = validate.parse_disassembly(text, {q["method"]: q["target"]["line"] for q in inputs["queries"]})
+    from pair_dataset import parse_methods
+    methods = parse_methods(text)
     queries = {query["id"]: query for query in inputs["queries"]}
     requests = []
     for result in hits:
         name = queries[result["id"]]["method"]
-        assert validate.execute_bytecode(methods[name], result["witness"])[1]
+        method = {**methods[name], "target_indices": [
+            target["instruction_indices"] for target in queries[result["id"]]["targets"]]}
+        assert validate.execute_bytecode(method, result["witness"], max_steps=10000)[1]
         requests.append(" ".join([name, *map(str, result["witness"])]))
+    validate.run(["javac", "-d", str(build / "classes"),
+                  str(validate.ROOT / "group15" / "validation" / "RuntimeCheck.java")])
     output = validate.run(
         ["java", "-Xint", "-cp", str(build / "classes"), "group15.validation.RuntimeCheck"],
         input="\n".join(requests) + "\n",
     )
-    assert output.splitlines() == ["1"] * len(hits)
+    assert output.splitlines() == ["2"] * len(hits)
 
 
 def test_real_cli_runs_with_replay_seed(compiled_dataset):
@@ -178,14 +183,15 @@ def test_real_cli_runs_with_replay_seed(compiled_dataset):
     entry = (
         "import sys; from pathlib import Path; "
         f"sys.path.insert(0, {str(run_a.ROOT / 'group15')!r}); "
-        f"import run_a; run_a.BUILD=Path({str(build)!r}); run_a.main()"
+        f"import run_a; run_a.BUILD=Path({str(build.parent)!r}); run_a.main()"
     )
     completed = subprocess.run(
-        [sys.executable, "-c", entry, "--seed", "0", "--random-trials", "1000"],
+        [sys.executable, "-c", entry, "--dataset", "line-reachability",
+         "--seed", "0", "--random-trials", "1000"],
         capture_output=True, text=True, timeout=60, check=False,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     report = json.loads((build / "a-results.json").read_text())
-    assert report["summary"] == {"reachable": 9, "unknown": 21}
+    assert report["summary"] == {"reachable": 7, "unknown": 23}
     assert report["seed"] == 0
     assert len(report["queries"]) == 30

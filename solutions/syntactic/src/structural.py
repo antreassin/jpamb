@@ -1,8 +1,7 @@
-"""Structural control flow over JPAMB instruction-list positions.
+"""S: ignore values and conditions; look for a graph path through both targets.
 
-The verdict concerns an instruction-list position; source-line mapping belongs
-to the caller. Exception-handler edges and method calls are not supported.
-A graph path is not a witness that an input can execute that path.
+No such path proves unreachable. A graph path only gives unknown, not a witness.
+Source/bytecode loading and unsupported-feature checks belong to the helpers.
 """
 
 from collections import deque
@@ -79,3 +78,51 @@ def verdict(instructions: list[dict], target_index: int) -> Literal["unreachable
     if target_index in reachable_instructions(instructions):
         return "unknown"
     return "unreachable"
+
+
+def pair_verdict(instructions: list[dict], targets: list[list[int]]) -> Literal["unreachable", "unknown"]:
+    """Track each path's two target hits, including across loops, in either order."""
+    graph = build_cfg(instructions)
+    if len(targets) != 2 or not all(targets):
+        raise ValueError("Expected two nonempty target sets")
+    if any(type(pc) is not int or not 0 <= pc < len(graph) for group in targets for pc in group):
+        raise ValueError("Invalid target instruction position")
+
+    pending, visited = deque([(0, False, False)]), set()
+    while pending:
+        pc, first_seen, second_seen = pending.popleft()
+        first_seen = first_seen or pc in targets[0]
+        second_seen = second_seen or pc in targets[1]
+        if first_seen and second_seen:
+            return "unknown"
+        state = (pc, first_seen, second_seen)
+        if state not in visited:
+            visited.add(state)
+            pending.extend((successor, first_seen, second_seen) for successor in graph[pc])
+    return "unreachable"
+
+
+def analyse(inputs: dict, disassembly: str) -> list[dict]:
+    """Apply S to each query, retaining explicit unsupported results."""
+    from analysis_common import prepare_queries, query_metadata
+    from pair_dataset import Unsupported, prepared_queries, supported_method
+
+    if inputs["schema_version"] != 2:
+        return [
+            {**query_metadata(query, method),
+             "verdict": verdict(instructions, method["target_instruction_index"])}
+            for query, method, instructions in prepare_queries(inputs, disassembly)
+        ]
+
+    results = []
+    for query, method in prepared_queries(inputs, disassembly):
+        result = dict(query)
+        try:
+            instructions = supported_method(query, method, structural=True)
+        except Unsupported as exc:
+            result.update(verdict="unsupported", reason=str(exc))
+        else:
+            result["verdict"] = pair_verdict(
+                instructions, [target["instruction_indices"] for target in query["targets"]])
+        results.append(result)
+    return results

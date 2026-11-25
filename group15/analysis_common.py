@@ -84,6 +84,15 @@ def prepare_queries(inputs: dict, disassembly: str) -> list[tuple[dict, dict, li
 
 
 def verify_artifacts(inputs: dict, build: Path):
+    if inputs["schema_version"] == 2:
+        from pair_dataset import DATASETS, verify_identity
+
+        verify_identity(inputs)
+        source = ROOT / inputs["source_file"]
+        classfile = build / "classes" / "group15" / f"{DATASETS[inputs['dataset']][0]}.class"
+        require(digest(source) == inputs["source_sha256"], "Source changed; rerun validation")
+        require(digest(classfile) == inputs["class_sha256"], "Class changed; rerun validation")
+        return
     require(inputs["source_file"] == "group15/src/group15/LineReachability.java", "Unexpected source path")
     source = ROOT / inputs["source_file"]
     classfile = build / "classes" / "group15" / "LineReachability.class"
@@ -93,12 +102,13 @@ def verify_artifacts(inputs: dict, build: Path):
 
 def load_inputs(build: Path = BUILD) -> tuple[dict, str]:
     input_path = build / "analysis-inputs.json"
-    require(input_path.is_file(), "Run python group15/validate.py before running an analysis")
+    require(input_path.is_file(),
+            "Run python group15/validate.py with the same --dataset before running an analysis")
     inputs = json.loads(input_path.read_text(encoding="utf-8"))
     verify_artifacts(inputs, build)
     # Read the current class, not a possibly stale saved disassembly.
     disassembly = run(["javap", "-classpath", str(build / "classes"), "-c", "-l", "-p", "-s",
-                       "group15.LineReachability"])
+                       inputs["class_name"]])
     return inputs, disassembly
 
 
@@ -116,7 +126,7 @@ def query_metadata(query: dict, method: dict) -> dict:
 def report_metadata(inputs: dict, build: Path) -> dict:
     verify_artifacts(inputs, build)
     return {
-        "schema_version": 1,
+        "schema_version": inputs["schema_version"],
         "status": "passed",
         "suite_id": inputs["suite_id"],
         "source_sha256": inputs["source_sha256"],
@@ -124,4 +134,7 @@ def report_metadata(inputs: dict, build: Path) -> dict:
         "inputs_sha256": digest(build / "analysis-inputs.json"),
         "loader_sha256": digest(ROOT / "group15" / "validate.py"),
         "common_sha256": digest(Path(__file__)),
+        **({"dataset": inputs["dataset"],
+            "pair_loader_sha256": digest(ROOT / "group15" / "pair_dataset.py")}
+           if inputs["schema_version"] == 2 else {}),
     }

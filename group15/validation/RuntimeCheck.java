@@ -8,7 +8,7 @@ import java.lang.reflect.Method;
 public final class RuntimeCheck {
     public static void main(String[] args) throws Exception {
         BufferedReader input = new BufferedReader(new InputStreamReader(System.in));
-        Class<?> benchmark = Class.forName("group15.LineReachability");
+        Class<?> benchmark = Class.forName(args.length == 0 ? "group15.LineReachability" : args[0]);
         String line;
         while ((line = input.readLine()) != null) {
             String[] fields = line.split(" ");
