@@ -9,18 +9,18 @@ from dataclasses import dataclass
 from itertools import product
 from typing import Literal
 
-MIN_INT, MAX_INT = -(2**31), 2**31 - 1
-FIXED_SEEDS = (0, 1, -1, 2, -2, MIN_INT, MIN_INT + 1, MAX_INT - 1, MAX_INT)
-DEFAULT_RANDOM_TRIALS = 1000
-MAX_STEPS = 10_000
+
+MIN_INT, MAX_INT = -(2**31), 2**31 - 1 #The minimum and maximum 32-bit signed integer values
+FIXED_SEEDS = (0, 1, -1, 2, -2, MIN_INT, MIN_INT + 1, MAX_INT - 1, MAX_INT) #The nine fixed numbers to test boundary and small values
+DEFAULT_RANDOM_TRIALS = 1000 #The default number of random trials to perform
 
 
 @dataclass(frozen=True)
-class SearchResult:
-    verdict: Literal["reachable", "unknown"]
-    witness: tuple[int, ...] | None
-    fixed_trials: int
-    random_trials: int
+class SearchResult: #Represents the result of a search, including the verdict, witness, and trial counts
+    verdict: Literal["reachable", "unknown"] #The search verdict, either "reachable" if a witness is found or "unknown" if not
+    witness: tuple[int, ...] | None #De tal eller det tal som ramte target, eller None hvis ingen blev fundet 
+    fixed_trials: int #The number of fixed trials performed
+    random_trials: int #The number of random trials performed
 
 
 def search(
