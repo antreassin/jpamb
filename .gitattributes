@@ -5,3 +5,5 @@ target/**/* -format -diff
 *.lock -format
 LICENSE -format
 OPCODES.md -format -diff
+group15/src/group15/LineReachability.java text eol=lf
+group15/src/group15/PairReachability.java text eol=lf

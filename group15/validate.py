@@ -20,6 +20,7 @@ import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -294,6 +295,24 @@ def run(command, **kwargs):
     return completed.stdout
 
 
+def resolve_target_entry(name, instructions, lines, target_line):
+    offsets = [offset for line, offset in lines if line == target_line]
+    require(len(offsets) == 1, f"{name}: line {target_line} must map to exactly one line-table entry")
+    offset = offsets[0]
+    require(all(line == target_line for line, start in lines if start == offset),
+            f"{name}: ambiguous source lines at offset {offset}")
+    indices = [i for i, instruction in enumerate(instructions) if instruction[0] == offset]
+    require(len(indices) == 1, f"{name}: target line has no unique instruction entry")
+    index = indices[0]
+    require(instructions[index][1] == "iconst_1", f"{name}: target does not start with iconst_1")
+    require(index + 1 < len(instructions) and re.fullmatch(r"istore(?:_[0-3])?", instructions[index + 1][1]),
+            f"{name}: target assignment store missing")
+    next_lines = [start for _, start in lines if start > offset]
+    require(next_lines and instructions[index + 1][0] < min(next_lines),
+            f"{name}: store is outside target source line")
+    return offset, index
+
+
 def parse_disassembly(text, methods):
     headers = list(re.finditer(r"^  public static int (q[0-9]{2})\([^\n]*\);$", text, re.M))
     result = {}
@@ -308,20 +327,7 @@ def parse_disassembly(text, methods):
             instructions.append((int(match.group(1)), match.group(2), match.group(3).strip()))
         require(instructions, f"{name}: no bytecode")
         lines = [(int(line), int(offset)) for line, offset in re.findall(r"line (\d+): (\d+)", segment)]
-        target_line = methods[name].target_line
-        target_offsets = [offset for line, offset in lines if line == target_line]
-        require(len(target_offsets) == 1, f"{name}: target must map to exactly one line-table entry")
-        offset = target_offsets[0]
-        indices = [i for i, instruction in enumerate(instructions) if instruction[0] == offset]
-        require(len(indices) == 1, f"{name}: target line has no instruction entry")
-        target_index = indices[0]
-        target_instruction = instructions[target_index]
-        require(target_instruction[1] == "iconst_1", f"{name}: target does not start with iconst_1")
-        require(target_index + 1 < len(instructions) and instructions[target_index + 1][1].startswith("istore"),
-                f"{name}: target assignment store missing")
-        next_lines = [start for _, start in lines if start > offset]
-        require(next_lines and instructions[target_index + 1][0] < min(next_lines),
-                f"{name}: store is outside target source line")
+        offset, target_index = resolve_target_entry(name, instructions, lines, methods[name].target_line)
         result[name] = {
             "descriptor": descriptor, "instructions": instructions,
             "target_byte_offset": offset, "target_instruction_index": target_index,
@@ -330,17 +336,23 @@ def parse_disassembly(text, methods):
     return result
 
 
-def execute_bytecode(compiled, arguments):
-    """Independent concrete interpreter for only the opcodes javac uses here."""
-    instructions = compiled["instructions"]
+@dataclass(frozen=True)
+class BytecodeTrace:
+    pcs: tuple[int, ...]
+    status: Literal["returned", "step_limit"]
+    return_value: int | None
+
+
+def trace_bytecode(instructions, arguments, *, max_steps) -> BytecodeTrace:
+    require(type(max_steps) is int and max_steps >= 0, "max_steps must be a nonnegative integer")
     offset_to_index = {instruction[0]: i for i, instruction in enumerate(instructions)}
     locals_ = dict(enumerate(arguments))
-    stack, pc, reached = [], 0, False
+    stack, pcs, pc = [], [], 0
     condition = {"eq": operator.eq, "ne": operator.ne, "lt": operator.lt,
                  "le": operator.le, "gt": operator.gt, "ge": operator.ge}
-    for _ in range(len(instructions) + 1):
-        offset, opcode, operand = instructions[pc]
-        reached |= offset == compiled["target_byte_offset"]
+    for _ in range(max_steps):
+        _, opcode, operand = instructions[pc]
+        pcs.append(pc)
         next_pc = pc + 1
         if opcode.startswith("iconst_"):
             stack.append(-1 if opcode == "iconst_m1" else int(opcode[-1]))
@@ -356,6 +368,9 @@ def execute_bytecode(compiled, arguments):
         elif opcode.startswith("istore"):
             slot = int(opcode.split("_")[1]) if "_" in opcode else int(operand)
             locals_[slot] = stack.pop()
+        elif opcode == "iadd":
+            total = stack.pop() + stack.pop()
+            stack.append((total - MIN_INT) % (1 << 32) + MIN_INT)
         elif opcode.startswith("if_icmp"):
             right, left = stack.pop(), stack.pop()
             if condition[opcode[7:]](left, right):
@@ -368,12 +383,20 @@ def execute_bytecode(compiled, arguments):
         elif opcode == "ireturn":
             returned = stack.pop()
             require(not stack, "Nonempty stack on ireturn")
-            return returned, reached
+            return BytecodeTrace(tuple(pcs), "returned", returned)
         else:
             raise ValueError(f"Unsupported bytecode opcode: {opcode}")
         require(next_pc > pc and next_pc < len(instructions), "Unexpected backward/invalid control flow")
         pc = next_pc
-    raise ValueError("Bytecode execution failed to return")
+    return BytecodeTrace(tuple(pcs), "step_limit", None)
+
+
+def execute_bytecode(compiled, arguments):
+    instructions = compiled["instructions"]
+    trace = trace_bytecode(instructions, arguments, max_steps=len(instructions))
+    require(trace.status == "returned", "Bytecode execution failed to return")
+    reached = any(instructions[pc][0] == compiled["target_byte_offset"] for pc in trace.pcs)
+    return trace.return_value, reached
 
 
 def validate_metadata(metadata, source, methods):

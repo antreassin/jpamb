@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,8 @@ sys.path.insert(0, str(ROOT))
 
 from group15 import run_pairs
 from group15.dictionary import extract_javap_constants
+from group15.pair_execution import prepare_pair_methods, trace_candidate
+from group15.validate import trace_bytecode
 
 SOURCE = ROOT / "group15/src/group15/PairReachability.java"
 DESCRIPTORS = {f"p{i:02d}": "(II)I" if i in (6, 8) else "(I)I" for i in range(1, 9)}
@@ -33,6 +36,11 @@ def synthetic_prepared(tmp_path):
         constants={"p03": (0, 1, 100003), "p04": (0, 1, 100003)},
         preparation_seconds=0.5,
     )
+
+
+@pytest.fixture(scope="module")
+def pair_methods(prepared):
+    return prepare_pair_methods(prepared)
 
 
 def test_real_compilation_extracts_only_selected_method_constants(prepared):
@@ -327,8 +335,17 @@ def _replay(classes, method, arguments):
 
 
 @pytest.mark.parametrize("method", DESCRIPTORS)
-def test_ground_truth_on_jvm(method, ground_truth, prepared, endpoint_classes):
+def test_ground_truth_on_jvm(
+    method, ground_truth, prepared, endpoint_classes, pair_methods
+):
     query = ground_truth[method]
+    pair_method = pair_methods[method]
+    target_names = dict(zip(pair_method.target_pcs, ("T1", "T2")))
+    compiled = prepared.methods[method]
+    method_id = f"group15.PairReachability.{method}:{query['descriptor']}"
+    bound = len(compiled.instructions)
+    for line, pc in zip(query["target_lines"], pair_method.target_pcs, strict=True):
+        assert (line, compiled.instructions[pc][0]) in compiled.lines
     assert query["feasible"] == (method not in NEGATIVE_REGIONS)
     first, second = map(tuple, query["target_witnesses"])
     inputs = {first, second}
@@ -349,6 +366,14 @@ def test_ground_truth_on_jvm(method, ground_truth, prepared, endpoint_classes):
         )
         assert events in ((), ("T1",), ("T2",), ("T1", "T2"))
         assert original.stdout.strip() == diagnostic.stdout.strip() == str(len(events))
+        trace = trace_candidate(pair_method, arguments, max_steps=bound)
+        assert trace.method_id == method_id
+        assert trace.status == "returned"
+        assert trace.return_value == int(original.stdout)
+        traced_events = tuple(target_names[pc] for pc in trace.pcs if pc in target_names)
+        assert traced_events == events
+        assert trace.pair_hit == (events == ("T1", "T2"))
+        assert trace.coverage == frozenset(trace.pcs)
         observed[arguments] = events
 
     assert "T1" in observed[first]
@@ -359,3 +384,113 @@ def test_ground_truth_on_jvm(method, ground_truth, prepared, endpoint_classes):
         assert all(len(events) < 2 for events in observed.values())
         for x, expected_events in NEGATIVE_REGIONS[method].items():
             assert observed[(x,)] == expected_events
+
+
+def test_trace_step_boundaries(pair_methods):
+    method = pair_methods["p04"]
+    arguments = (100003,)
+    full = trace_candidate(method, arguments, max_steps=len(method.instructions))
+    assert full.pcs == tuple(range(len(method.instructions)))
+    assert (full.status, full.return_value, full.pair_hit) == ("returned", 2, True)
+
+    before_second = full.pcs.index(method.target_pcs[1])
+    bounds = (0, before_second, before_second + 1, len(full.pcs) - 1, len(full.pcs))
+    for bound in bounds:
+        trace = trace_candidate(method, arguments, max_steps=bound)
+        assert trace.pcs == full.pcs[:bound]
+        assert trace.coverage == frozenset(full.pcs[:bound])
+        assert trace.pair_hit == (bound > before_second)
+        if bound == len(full.pcs):
+            assert (trace.status, trace.return_value) == ("returned", 2)
+        else:
+            assert (trace.status, trace.return_value) == ("step_limit", None)
+
+
+def test_trace_target_order_is_independent_of_return_value(pair_methods):
+    method = pair_methods["p04"]
+    reversed_targets = replace(method, target_pcs=method.target_pcs[::-1])
+    trace = trace_candidate(
+        reversed_targets, (100003,), max_steps=len(method.instructions)
+    )
+    assert set(method.target_pcs) <= trace.coverage
+    assert trace.return_value == 2
+    assert not trace.pair_hit
+
+
+@pytest.mark.parametrize("name,first_input", [("p03", 100003), ("p05", -1)])
+def test_trace_targets_are_local_to_one_invocation(pair_methods, name, first_input):
+    method = pair_methods[name]
+    first_pc, second_pc = method.target_pcs
+    bound = len(method.instructions)
+    only_first = trace_candidate(method, (first_input,), max_steps=bound)
+    only_second = trace_candidate(method, (0,), max_steps=bound)
+    targets = set(method.target_pcs)
+    assert targets & only_first.coverage == {first_pc}
+    assert targets & only_second.coverage == {second_pc}
+    assert not only_first.pair_hit and not only_second.pair_hit
+    if name == "p05":
+        assert method.instructions[only_first.pcs[-1]][1] == "ireturn"
+        assert only_first.pcs[-1] < second_pc
+
+
+def test_trace_short_circuit_coverage(pair_methods):
+    method = pair_methods["p08"]
+    short = trace_candidate(method, (0, 1), max_steps=len(method.instructions))
+    longer = trace_candidate(method, (100003, 1), max_steps=len(method.instructions))
+    assert short.method_id == longer.method_id
+    assert not short.pair_hit and not longer.pair_hit
+    assert short.return_value == longer.return_value == 0
+    assert longer.coverage > short.coverage
+
+
+@pytest.mark.parametrize(
+    "problem", ["missing", "ambiguous", "same_entry", "wrong_opcode"]
+)
+def test_trace_rejects_invalid_line_mapping(prepared, ground_truth, problem):
+    method = prepared.methods["p04"]
+    first, second = ground_truth["p04"]["target_lines"]
+    offsets = dict(method.lines)
+    lines = [(line, offset) for line, offset in method.lines if line != second]
+    if problem == "ambiguous":
+        lines.extend([(second, offsets[first]), (second, offsets[second])])
+    elif problem == "same_entry":
+        lines.append((second, offsets[first]))
+    elif problem == "wrong_opcode":
+        lines.append((second, method.instructions[1][0]))
+    methods = {**prepared.methods, "p04": replace(method, lines=lines)}
+    with pytest.raises(ValueError):
+        prepare_pair_methods(replace(prepared, methods=methods))
+
+
+def test_trace_rejects_stale_source(prepared):
+    with pytest.raises(ValueError, match="source differs"):
+        prepare_pair_methods(replace(prepared, source_sha256="stale"))
+
+
+@pytest.mark.parametrize("bound", [-1, True, 1.5])
+def test_trace_invalid_step_bound(pair_methods, bound):
+    with pytest.raises(ValueError):
+        trace_candidate(pair_methods["p04"], (0,), max_steps=bound)
+
+
+@pytest.mark.parametrize("arguments", [(), (0, True), (2**31, 0)])
+def test_trace_invalid_java_arguments(pair_methods, arguments):
+    with pytest.raises(ValueError):
+        trace_candidate(pair_methods["p08"], arguments, max_steps=0)
+
+
+@pytest.mark.parametrize(
+    "left,right,expected", [(2**31 - 1, 1, -(2**31)), (-(2**31), -1, 2**31 - 1)]
+)
+def test_trace_java_iadd_wraps(left, right, expected):
+    instructions = [
+        (0, "iload_0", ""), (1, "iload_1", ""), (2, "iadd", ""), (3, "ireturn", "")
+    ]
+    result = trace_bytecode(instructions, (left, right), max_steps=4)
+    assert (result.status, result.return_value) == ("returned", expected)
+
+
+@pytest.mark.parametrize("instruction", [(0, "goto", "0"), (0, "invokestatic", "#1")])
+def test_trace_rejects_unsupported_execution(instruction):
+    with pytest.raises(ValueError):
+        trace_bytecode([instruction], (), max_steps=1)

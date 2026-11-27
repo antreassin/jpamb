@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import re
@@ -9,12 +10,13 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from group15.dictionary import MAX_INT, MIN_INT, extract_javap_constants, search
 
 HERE = Path(__file__).resolve().parent
+PAIR_SOURCE = HERE / "src" / "group15" / "PairReachability.java"
 METHODS = {
     "p01": "(I)I",
     "p02": "(I)I",
@@ -36,10 +38,19 @@ TIMING_NOTE = (
 
 
 @dataclass(frozen=True)
+class MethodBytecode:
+    descriptor: str
+    instructions: list[tuple[int, str, str]]
+    lines: list[tuple[int, int]]
+
+
+@dataclass(frozen=True)
 class PreparedBenchmark:
     classes: Path
     constants: dict[str, tuple[int, ...]]
     preparation_seconds: float
+    methods: dict[str, MethodBytecode] = field(default_factory=dict)
+    source_sha256: str = ""
 
 
 def _run(command: list[str], *, timeout: float = 60) -> str:
@@ -59,8 +70,7 @@ def _run(command: list[str], *, timeout: float = 60) -> str:
     return completed.stdout
 
 
-def parse_pair_disassembly(text: str) -> dict[str, list[tuple[int, str, str]]]:
-    """Verify compiled signatures and collect each method's own instructions."""
+def parse_pair_methods(text: str) -> dict[str, MethodBytecode]:
     headers = list(
         re.finditer(
             r"^  (?:public|protected|private) [^\n]*;[ \t]*$", text, re.MULTILINE
@@ -81,23 +91,30 @@ def parse_pair_disassembly(text: str) -> dict[str, list[tuple[int, str, str]]]:
             raise ValueError(f"{name}: expected descriptor {METHODS[name]}")
         if "Code:" not in body or "LineNumberTable:" not in body:
             raise ValueError(f"{name}: missing bytecode or debug line information")
-        code = body.split("Code:", 1)[1].split("LineNumberTable:", 1)[0]
+        code, debug = body.split("Code:", 1)[1].split("LineNumberTable:", 1)
         instructions = [
             (int(match[1]), match[2], match[3].strip())
             for match in re.finditer(r"^\s*(\d+):\s+(\S+)([^\n]*)$", code, re.MULTILINE)
         ]
         if not instructions:
             raise ValueError(f"{name}: no bytecode instructions")
-        if not re.search(r"\bline \d+: \d+", body.split("LineNumberTable:", 1)[1]):
+        entries = re.findall(r"^[ \t]*line (\d+): (\d+)[ \t]*$", debug, re.MULTILINE)
+        lines = [(int(line), int(offset)) for line, offset in entries]
+        if not lines:
             raise ValueError(f"{name}: empty debug line table")
-        methods[name] = instructions
+        methods[name] = MethodBytecode(descriptor[1], instructions, lines)
     missing = METHODS.keys() - methods.keys()
     if missing:
         raise ValueError(f"Missing compiled methods: {', '.join(sorted(missing))}")
     return methods
 
 
-def compile_pair_benchmark(build_dir: Path) -> PreparedBenchmark:
+def parse_pair_disassembly(text: str) -> dict[str, list[tuple[int, str, str]]]:
+    methods = parse_pair_methods(text)
+    return {name: method.instructions for name, method in methods.items()}
+
+
+def compile_pair_benchmark(build_dir: Path, *, include_constants: bool = True) -> PreparedBenchmark:
     """Compile the benchmark and smoke harness into the caller's build directory."""
     started = time.perf_counter()
     for tool in ("javac", "javap", "java"):
@@ -105,6 +122,7 @@ def compile_pair_benchmark(build_dir: Path) -> PreparedBenchmark:
             raise RuntimeError(f"{tool} is required; use a JDK 17+ installation")
     classes = Path(build_dir).resolve() / "classes"
     classes.mkdir(parents=True, exist_ok=True)
+    source_sha256 = hashlib.sha256(PAIR_SOURCE.read_bytes()).hexdigest()
     _run(
         [
             "javac",
@@ -113,16 +131,20 @@ def compile_pair_benchmark(build_dir: Path) -> PreparedBenchmark:
             "17",
             "-d",
             str(classes),
-            str(HERE / "src" / "group15" / "PairReachability.java"),
+            str(PAIR_SOURCE),
             str(HERE / "validation" / "PairRuntimeCheck.java"),
         ]
     )
     disassembly = _run(
         ["javap", "-classpath", str(classes), "-c", "-l", "-s", CLASS_NAME]
     )
-    methods = parse_pair_disassembly(disassembly)
-    constants = {name: extract_javap_constants(methods[name]) for name in METHODS}
-    return PreparedBenchmark(classes, constants, time.perf_counter() - started)
+    methods = parse_pair_methods(disassembly)
+    constants = {}
+    if include_constants:
+        constants = {name: extract_javap_constants(methods[name].instructions) for name in METHODS}
+    return PreparedBenchmark(
+        classes, constants, time.perf_counter() - started, methods, source_sha256
+    )
 
 
 def _arity(method: str) -> int:
@@ -131,13 +153,16 @@ def _arity(method: str) -> int:
     return ARITY[METHODS[method]]
 
 
-def execute_candidate(classes: Path, method: str, arguments: tuple[int, ...]) -> bool:
-    """Smoke oracle only: run one invocation and check its return value, not PCs."""
-    arity = _arity(method)
+def validate_arguments(method: str, arity: int, arguments: tuple[int, ...]) -> None:
     if len(arguments) != arity or any(
         type(value) is not int or not MIN_INT <= value <= MAX_INT for value in arguments
     ):
         raise ValueError(f"{method} expects {arity} signed Java int argument(s)")
+
+
+def execute_candidate(classes: Path, method: str, arguments: tuple[int, ...]) -> bool:
+    """Smoke oracle only: run one invocation and check its return value, not PCs."""
+    validate_arguments(method, _arity(method), arguments)
     output = _run(
         [
             "java",

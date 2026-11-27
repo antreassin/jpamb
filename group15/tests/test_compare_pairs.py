@@ -53,6 +53,25 @@ def test_only_budgeted_fixed_tuples_reach_observer(
 
 
 @pytest.mark.parametrize(
+    "arity,cap,field",
+    [
+        (3, 1, "arity"),
+        (True, 1, "arity"),
+        (1.0, 0, "arity"),
+        (1, -1, "cap"),
+        (1, True, "cap"),
+        (1, 2.5, "cap"),
+    ],
+)
+def test_invalid_search_parameters_rejected_before_observation(arity, cap, field):
+    def observe(arguments):
+        pytest.fail(f"Unexpected observer call with {arguments}")
+
+    with pytest.raises(ValueError, match=field):
+        cmp.budgeted_search(arity, (), observe, random.Random(15), cap)
+
+
+@pytest.mark.parametrize(
     "method,cap,hit,expected,fixed,dictionary",
     [
         ("p04", 10, (100003,), None, 9, 1),

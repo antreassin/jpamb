@@ -1,4 +1,3 @@
-
 """Comparing A and B using the same execution budget"""
 
 from __future__ import annotations
@@ -17,17 +16,20 @@ from pathlib import Path
 from group15 import run_pairs
 from group15.dictionary import FIXED_SEEDS, SearchResult, dictionary_values, search
 
-
 POLICIES = ("A", "B")
 
 
-def _budgeted_search(
+def budgeted_search(
     arity: int,
     constants: tuple[int, ...],
     observe: Callable[[tuple[int, ...]], bool],
     rng: random.Random,
     cap: int,
 ) -> SearchResult:
+    if type(arity) is not int or arity not in (1, 2):
+        raise ValueError("arity must be 1 or 2")
+    if type(cap) is not int or cap < 0:
+        raise ValueError("cap must be a nonnegative integer")
     fixed_size = len(FIXED_SEEDS) ** arity
 
     # Handle budgets smaller than the fixed input set
@@ -79,7 +81,7 @@ def run_arm(
 
     started = time.perf_counter()
 
-    result = _budgeted_search(
+    result = budgeted_search(
         run_pairs.ARITY[descriptor],
         prepared.constants[method] if strategy == "B" else (),
         observe,
